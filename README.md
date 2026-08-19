@@ -2,6 +2,8 @@
 
 TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。它的目标不是只实现 Coding Agent，而是根据任务动态调度不同的 Specialist Agent，并通过验证闭环、上下文工程和安全执行环境完成复合任务。
 
+> 项目目前处于早期开发阶段，仅完成基础工程骨架。公开 API、模块边界和运行方式仍可能变化。
+
 ## 目标架构
 
 ```text
@@ -31,62 +33,58 @@ Agent   = 决定做什么
 Harness = 决定这件事如何执行
 ```
 
-## 演进路线
+## 核心设计目标
+
+- 根据任务动态规划、路由和委派 Specialist Agent；
+- 支持 Research、Coding 以及两者协作的复合任务；
+- 使用 Verifier 提供基于环境证据的执行闭环；
+- 隔离不同 Agent 的工作上下文，避免传递完整历史；
+- 通过 Execution Harness 统一处理工具注册、参数验证和安全边界；
+- 支持 Permission、Human Approval、Checkpoint、Resume 与 Trace；
+- 使用可复现评测比较 Single-Agent 与 Multi-Agent 的收益和成本。
+
+## Roadmap
+
+- [x] 初始化 Python 项目骨架与基础测试；
+- [ ] 实现 Tool Registry、Dispatcher 与 Workspace Boundary；
+- [ ] 实现最小 ReAct Agent 与 Execution Harness；
+- [ ] 引入 LangGraph 和结构化 Workflow State；
+- [ ] 实现 Plan → Execute → Verify 闭环；
+- [ ] 实现 Supervisor、ResearchAgent 与 CodeAgent；
+- [ ] 实现 History、Retriever 与 Context Builder；
+- [ ] 实现 Context Monitor、Compressor 与 Notepad；
+- [ ] 实现 Permission、Approval、Checkpoint 与 Trace；
+- [ ] 实现 Session、CLI、Event Stream 与 Evaluation；
+- [ ] 完成 Research、Coding 和 Multi-Agent 演示。
+
+## 项目结构
 
 ```text
-Tool Calling
-    ↓
-ReAct Agent
-    ↓
-Tool / Workspace / Harness
-    ↓
-LangGraph
-    ↓
-Plan → Execute → Verify
-    ↓
-Supervisor / Multi-Agent
-    ↓
-Context Engineering
-    ↓
-Harness Engineering
-    ↓
-Session / Application
-    ↓
-Evaluation
+TikiAgent/
+├── src/
+│   └── tikiagent/
+├── tests/
+├── pyproject.toml
+└── README.md
 ```
 
-## 当前进度
+项目将随着 Roadmap 推进逐步增加 `agents`、`harness`、`orchestration` 和 `context` 等模块。
 
-### Day 1：工程基线与 Tool Calling 学习
-
-- 正式仓库完成最小 Python `src` 项目结构；
-- Tool Calling、Dispatcher 与最小 Agent Loop 在本地 `TikiAgent_learn` 项目中进行教学实验；
-- 正式 Harness 将在 Day 2 基于已验证的职责边界重新实现。
-
-Day 1 刻意不把教学实现复制进正式项目，避免把示例代码误当成正式执行层设计。
-
-## 本地开发
+## Quick Start
 
 环境要求：
 
 - Python 3.13+
 - uv
 
-安装并运行测试：
+克隆仓库并运行测试：
 
 ```powershell
+git clone https://github.com/ZhuYaozong/TikiAgent.git
+cd TikiAgent
 uv sync
 uv run pytest
 ```
-
-如果 Windows 环境配置了不可用的 Python 镜像或证书目录，可以仅对当前命令改用系统证书与官方索引：
-
-```powershell
-uv sync --native-tls --default-index https://pypi.org/simple
-uv run --native-tls --default-index https://pypi.org/simple --locked pytest
-```
-
-Day 1 验证结果：正式项目骨架测试通过；Tool Calling 的 9 项故障与循环测试在本地学习项目中通过，三个渐进示例均可运行。
 
 ## v1 目标 Demo
 
