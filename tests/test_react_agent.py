@@ -1,6 +1,7 @@
 """ReAct Agent Loop 测试。"""
 
 import json
+import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -8,7 +9,12 @@ from typing import Any
 import pytest
 
 from tikiagent.agents import MaxStepsExceeded, ReActAgent
-from tikiagent.harness import Dispatcher, Workspace, build_file_registry
+from tikiagent.harness import (
+    Dispatcher,
+    Workspace,
+    build_file_registry,
+    register_command_tool,
+)
 from tikiagent.llm import ModelResponse, ModelToolCall
 
 
@@ -71,7 +77,9 @@ def build_agent(
     max_steps: int = 8,
 ) -> tuple[Workspace, ReActAgent]:
     workspace = Workspace(tmp_path / "workspace")
-    dispatcher = Dispatcher(build_file_registry(workspace))
+    registry = build_file_registry(workspace)
+    register_command_tool(registry, workspace)
+    dispatcher = Dispatcher(registry)
     return workspace, ReActAgent(model, dispatcher, max_steps=max_steps)
 
 
@@ -138,3 +146,66 @@ def test_agent_stops_at_max_steps(tmp_path: Path) -> None:
 
     with pytest.raises(MaxStepsExceeded):
         agent.run("不断读取不存在的文件")
+
+
+def test_agent_repairs_code_and_verifies_with_real_process(
+    tmp_path: Path,
+) -> None:
+    test_command = [
+        sys.executable,
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        ".",
+        "-p",
+        "test_*.py",
+    ]
+    model = ScriptedModel(
+        [
+            tool_response(
+                "call_baseline",
+                "run_command",
+                {"command": test_command},
+            ),
+            tool_response(
+                "call_edit",
+                "edit_file",
+                {
+                    "path": "calculator.py",
+                    "old_text": "return a - b",
+                    "new_text": "return a + b",
+                },
+            ),
+            tool_response(
+                "call_verify",
+                "run_command",
+                {"command": test_command},
+            ),
+            final_response("修复完成，测试通过"),
+        ]
+    )
+    workspace, agent = build_agent(tmp_path, model)
+    workspace.resolve("calculator.py").write_text(
+        "def add(a: int, b: int) -> int:\n    return a - b\n",
+        encoding="utf-8",
+    )
+    workspace.resolve("test_calculator.py").write_text(
+        "import unittest\n"
+        "from calculator import add\n\n"
+        "class TestAdd(unittest.TestCase):\n"
+        "    def test_add(self):\n"
+        "        self.assertEqual(add(2, 3), 5)\n",
+        encoding="utf-8",
+    )
+
+    result = agent.run("修复代码并运行测试")
+
+    assert result.final_text == "修复完成，测试通过"
+    assert result.tool_results[0].ok is True
+    assert result.tool_results[0].output["exit_code"] == 1
+    assert result.tool_results[2].ok is True
+    assert result.tool_results[2].output["exit_code"] == 0
+    baseline_observation = json.loads(model.requests[1][-1]["content"])
+    assert baseline_observation["output"]["exit_code"] == 1

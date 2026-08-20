@@ -33,6 +33,20 @@ class ToolResult(BaseModel):
     error: ToolError | None = None
 
 
+class CommandResult(BaseModel):
+    """子进程运行结果，与 ToolResult 的协议状态相互独立。"""
+
+    command: list[str]
+    cwd: str
+    exit_code: int | None
+    stdout: str
+    stderr: str
+    duration_seconds: float
+    timed_out: bool
+    stdout_truncated: bool
+    stderr_truncated: bool
+
+
 class ToolExecutionError(Exception):
     """工具主动报告的、可预期的执行错误。"""
 
