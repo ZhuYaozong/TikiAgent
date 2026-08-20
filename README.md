@@ -2,32 +2,33 @@
 
 TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。目标是根据任务动态调度不同的 Specialist Agent，并通过验证闭环、上下文工程和安全执行环境完成 Research、Coding 与复合任务。
 
-当前版本为 **v0.1 ReAct Foundation**：已实现真实模型驱动的 Agent Loop、OpenAI-compatible 模型适配层，以及带 Workspace 边界、超时和输出截断的 Execution Harness。
+当前版本为 **v0.2 State Graph**：在 v0.1 Execution Harness 和手写 ReAct baseline 之上，新增 LangGraph 编排与结构化 `TikiState`。
 
-## v0.1 架构
+## v0.2 架构
 
 ```text
 User Task
     ↓
-ReAct Agent Loop
+TikiState
     ↓
-ModelClient ── OpenAI-compatible ── DeepSeek / vLLM
-    ↓ ToolCall
-Dispatcher
-    ↓
-Tool Registry ── File Tools / Command Runtime
-    ↓
-Workspace Boundary
-    ↓ ToolResult / Observation
-ReAct Agent Loop
-    ├── Continue
-    └── Final Answer
+START → Actor ── no ToolCall / completed ──→ END
+          │
+          │ ToolCall
+          ▼
+        Tools
+          │
+          └──────────────────────────────→ Actor
+
+Actor: ModelClient ── OpenAI-compatible ── DeepSeek / vLLM
+Tools: Dispatcher → Registry → File / Command → Workspace
 ```
 
 当前职责边界：
 
 - **ModelClient**：把内部 Tool Schema 和模型响应适配为 OpenAI-compatible Chat Completions 协议；
-- **ReActAgent**：保存消息、关联 `tool_call_id`、执行循环并控制 `max_steps`；
+- **ReActAgent**：保留为手写循环 baseline；
+- **TikiState**：保存 task、当前消息、待执行工具、工具结果、运行引用、限制与完成状态；
+- **ReActWorkflow**：使用 Actor Node、Tools Node 和 Conditional Edge 显式编排循环；
 - **Dispatcher**：验证工具名称和参数、执行 Python 工具、返回结构化错误；
 - **Workspace**：拒绝绝对路径和目录逃逸；
 - **File Tools**：提供 `read_file`、`write_file`、`edit_file`、`list_files` 和 `grep`；
@@ -67,10 +68,16 @@ TIKI_LLM_MODEL=deepseek-chat
 
 `.env` 已被 Git 忽略，不要把真实密钥写入 README、示例代码或提交记录。
 
-运行真实模型代码修复与测试闭环 Demo：
+运行手写 ReAct baseline：
 
 ```powershell
 uv run python examples/react_file_repair.py
+```
+
+运行 LangGraph + TikiState 版本：
+
+```powershell
+uv run python examples/langgraph_react.py
 ```
 
 切换到本地 vLLM 时只需修改配置，Agent 和 Harness 不变：
@@ -125,20 +132,43 @@ src/tikiagent/
 │   ├── models.py
 │   ├── registry.py
 │   └── workspace.py
-└── llm/
-    ├── config.py
-    ├── models.py
-    └── openai_compatible.py
+├── llm/
+│   ├── config.py
+│   ├── models.py
+│   └── openai_compatible.py
+└── orchestration/
+    ├── react_graph.py
+    └── state.py
 ```
 
-测试不调用外部模型 API，使用确定性 Fake Model 验证 Agent Loop，并覆盖参数错误、未知工具、路径逃逸、编辑歧义、非法 JSON、`max_steps`、命令非零退出、超时和输出截断。
+测试不调用外部模型 API，使用确定性 Fake Model 验证手写 Agent 与 LangGraph。当前覆盖 Reducer、条件路由、工具失败 Observation、业务 `max_steps`、参数错误、未知工具、路径逃逸、编辑歧义、命令非零退出、超时和输出截断。
+
+## State 边界
+
+```text
+TikiState
+= 当前 workflow 的结构化运行快照
+
+messages
+= 当前 Agent 调用模型所需的工作消息
+
+Workspace
+= 文件和命令实际作用的外部环境
+
+History
+= 尚未实现的完整过去信息存储
+```
+
+`TikiState` 只保存 `workspace_id`，不会把 Workspace 文件内容放进状态。`messages` 和 `tool_results` 使用 Reducer 追加；`pending_tool_calls`、`status` 与计数器使用覆盖更新。
+
+`max_steps` 是业务层的模型决策次数上限；`recursion_limit` 是 LangGraph 对整张图节点执行次数的基础设施保护。一次工具调用会经过 Actor 和 Tools 两个节点，因此两者不能按相同数值理解。
 
 ## 当前限制
 
 - Command Runtime 的 Workspace `cwd` 限制不是操作系统 Sandbox，子进程仍可能主动访问 Workspace 外部资源；
 - 当前输出限制在进程结束后截断返回内容，尚未实现流式输出背压；
 - 尚未实现命令 allowlist、Permission、Human Approval、Checkpoint 和 Trace，不应在不受信任环境中开放任意命令；
-- 当前只有 Single ReAct Agent，尚未引入 LangGraph、Supervisor 和 Specialist Agents；
+- 当前状态图仍是 Single ReAct Workflow，尚未实现 Planner、Verifier、Supervisor 和 Specialist Agents；
 - OpenAI-compatible 后端共享协议格式，但不同模型的工具调用能力仍可能不同。
 
 ## v1 目标架构
@@ -157,7 +187,7 @@ Supervisor ── Plan / Route / Delegate
  Continue     Finish
 ```
 
-最终系统分为 Control Plane、Context Plane 和 Execution Plane。v0.1 完成的是 Execution Plane 的文件工具基础，以及后续 Specialist Agent 可以复用的 ReAct 执行核心。
+最终系统分为 Control Plane、Context Plane 和 Execution Plane。v0.1 建立 Execution Plane 与 ReAct baseline；v0.2 建立结构化状态和后续 Control Plane 可以扩展的 Graph 基础。
 
 ## Roadmap
 
@@ -168,7 +198,7 @@ Supervisor ── Plan / Route / Delegate
 - [x] 真实模型 ReAct Agent 和 `max_steps`；
 - [x] Command Runtime、timeout、cwd、output limit 与测试闭环；
 - [ ] Permission、Approval、更强的进程隔离、Checkpoint 与 Trace；
-- [ ] LangGraph 与结构化 TikiState；
+- [x] LangGraph 与结构化 TikiState；
 - [ ] Plan → Execute → Verify；
 - [ ] Supervisor、ResearchAgent 与 CodeAgent；
 - [ ] History、Retriever、Context Builder 与 Compressor；
