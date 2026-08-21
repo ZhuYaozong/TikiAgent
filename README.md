@@ -2,33 +2,36 @@
 
 TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。目标是根据任务动态调度不同的 Specialist Agent，并通过验证闭环、上下文工程和安全执行环境完成 Research、Coding 与复合任务。
 
-当前版本为 **v0.2 State Graph**：在 v0.1 Execution Harness 和手写 ReAct baseline 之上，新增 LangGraph 编排与结构化 `TikiState`。
+当前版本为 **v0.3 Plan / Verify Loop**：在 ReAct Actor 和结构化 `TikiState` 之上，新增 Planner、只读 Verifier 与失败重试闭环。
 
-## v0.2 架构
+## v0.3 架构
 
 ```text
 User Task
     ↓
-TikiState
-    ↓
-START → Actor ── no ToolCall / completed ──→ END
+START → Planner ── EXECUTE / RETRY ──→ ReAct Code Actor
+          ▲                                  │
+          │                                  ▼
+          └──────── VerificationReport ← Verifier
           │
-          │ ToolCall
-          ▼
-        Tools
-          │
-          └──────────────────────────────→ Actor
+          └── FINISH / STOP ───────────────→ END
 
-Actor: ModelClient ── OpenAI-compatible ── DeepSeek / vLLM
-Tools: Dispatcher → Registry → File / Command → Workspace
+Planner: StructuredModelClient → Plan / PlannerDecision
+Actor:   ModelClient → ReAct → Dispatcher → Workspace
+Verifier: fixed checks → read-only Registry → CommandResult
 ```
 
 当前职责边界：
 
 - **ModelClient**：把内部 Tool Schema 和模型响应适配为 OpenAI-compatible Chat Completions 协议；
+- **StructuredModelClient**：使用 JSON Schema 提示和 Pydantic 本地校验生成结构化控制数据；
 - **ReActAgent**：保留为手写循环 baseline；
-- **TikiState**：保存 task、当前消息、待执行工具、工具结果、运行引用、限制与完成状态；
+- **PlannerAgent**：生成 Plan，并根据 VerificationReport 决定 RETRY、FINISH 或 STOP；
+- **ReActCodeActor**：复用 ReActAgent 执行计划，只向外传递 ActorResult；
+- **EnvironmentVerifier**：执行应用预先配置的环境检查，不修改文件、不决定路由；
+- **TikiState**：保存 task、计划、验收标准、ActorResult、VerificationReport、限制与完成状态；
 - **ReActWorkflow**：使用 Actor Node、Tools Node 和 Conditional Edge 显式编排循环；
+- **PlanVerifyWorkflow**：强制 Verifier 回到 Planner，并限制失败报告直接 FINISH；
 - **Dispatcher**：验证工具名称和参数、执行 Python 工具、返回结构化错误；
 - **Workspace**：拒绝绝对路径和目录逃逸；
 - **File Tools**：提供 `read_file`、`write_file`、`edit_file`、`list_files` 和 `grep`；
@@ -80,6 +83,12 @@ uv run python examples/react_file_repair.py
 uv run python examples/langgraph_react.py
 ```
 
+运行 Plan → Execute → Verify 版本：
+
+```powershell
+uv run python examples/plan_verify_repair.py
+```
+
 切换到本地 vLLM 时只需修改配置，Agent 和 Harness 不变：
 
 ```dotenv
@@ -124,7 +133,10 @@ CommandResult.exit_code / timed_out
 ```text
 src/tikiagent/
 ├── agents/
-│   └── react.py
+│   ├── code.py
+│   ├── planner.py
+│   ├── react.py
+│   └── verifier.py
 ├── harness/
 │   ├── dispatcher.py
 │   ├── command_tools.py
@@ -135,13 +147,16 @@ src/tikiagent/
 ├── llm/
 │   ├── config.py
 │   ├── models.py
-│   └── openai_compatible.py
+│   ├── openai_compatible.py
+│   └── structured_output.py
 └── orchestration/
+    ├── models.py
+    ├── plan_verify.py
     ├── react_graph.py
     └── state.py
 ```
 
-测试不调用外部模型 API，使用确定性 Fake Model 验证手写 Agent 与 LangGraph。当前覆盖 Reducer、条件路由、工具失败 Observation、业务 `max_steps`、参数错误、未知工具、路径逃逸、编辑歧义、命令非零退出、超时和输出截断。
+测试不调用外部模型 API，使用确定性 Fake Model / Fake Agent 验证手写 Agent 与 LangGraph。当前覆盖 Structured Output 修正、Planner 决策保护、Verifier 工具隔离、成功闭环、失败重试、`max_attempts`、Reducer、工具错误、路径逃逸、命令非零退出、超时和输出截断。
 
 ## State 边界
 
@@ -152,6 +167,9 @@ TikiState
 messages
 = 当前 Agent 调用模型所需的工作消息
 
+Plan / ActorResult / VerificationReport
+= Control Plane 节点之间的结构化 Handoff
+
 Workspace
 = 文件和命令实际作用的外部环境
 
@@ -161,14 +179,19 @@ History
 
 `TikiState` 只保存 `workspace_id`，不会把 Workspace 文件内容放进状态。`messages` 和 `tool_results` 使用 Reducer 追加；`pending_tool_calls`、`status` 与计数器使用覆盖更新。
 
+PlanVerifyWorkflow 不把 ReActCodeActor 的完整内部 messages 交给 Planner 或 Verifier，只传递 `ActorResult` 和环境证据，避免角色上下文直接混合。
+
 `max_steps` 是业务层的模型决策次数上限；`recursion_limit` 是 LangGraph 对整张图节点执行次数的基础设施保护。一次工具调用会经过 Actor 和 Tools 两个节点，因此两者不能按相同数值理解。
+
+在 PlanVerifyWorkflow 中，`max_attempts` 限制外层 Actor → Verifier 执行轮数；Actor 自己的 `max_steps` 限制单轮 ReAct 模型决策；外层 `recursion_limit` 保护 Planner / Actor / Verifier 节点循环。
 
 ## 当前限制
 
 - Command Runtime 的 Workspace `cwd` 限制不是操作系统 Sandbox，子进程仍可能主动访问 Workspace 外部资源；
 - 当前输出限制在进程结束后截断返回内容，尚未实现流式输出背压；
 - 尚未实现命令 allowlist、Permission、Human Approval、Checkpoint 和 Trace，不应在不受信任环境中开放任意命令；
-- 当前状态图仍是 Single ReAct Workflow，尚未实现 Planner、Verifier、Supervisor 和 Specialist Agents；
+- 当前只有 Planner + Code Actor + Verifier，尚未实现 Supervisor、ResearchAgent 和真正的 Multi-Agent Handoff；
+- Verifier 的文件 Registry 不包含写工具，但 Command Runtime 还不是操作系统 Sandbox；当前验证命令必须由应用代码固定配置；
 - OpenAI-compatible 后端共享协议格式，但不同模型的工具调用能力仍可能不同。
 
 ## v1 目标架构
@@ -187,7 +210,7 @@ Supervisor ── Plan / Route / Delegate
  Continue     Finish
 ```
 
-最终系统分为 Control Plane、Context Plane 和 Execution Plane。v0.1 建立 Execution Plane 与 ReAct baseline；v0.2 建立结构化状态和后续 Control Plane 可以扩展的 Graph 基础。
+最终系统分为 Control Plane、Context Plane 和 Execution Plane。v0.1 建立 Execution Plane 与 ReAct baseline；v0.2 建立结构化状态和 Graph 基础；v0.3 建立第一个带环境证据的控制闭环。
 
 ## Roadmap
 
@@ -199,7 +222,7 @@ Supervisor ── Plan / Route / Delegate
 - [x] Command Runtime、timeout、cwd、output limit 与测试闭环；
 - [ ] Permission、Approval、更强的进程隔离、Checkpoint 与 Trace；
 - [x] LangGraph 与结构化 TikiState；
-- [ ] Plan → Execute → Verify；
+- [x] Plan → Execute → Verify；
 - [ ] Supervisor、ResearchAgent 与 CodeAgent；
 - [ ] History、Retriever、Context Builder 与 Compressor；
 - [ ] Session、CLI、Event Stream 与 Evaluation。

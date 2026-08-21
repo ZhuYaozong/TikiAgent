@@ -4,4 +4,4 @@ import tikiagent
 
 
 def test_package_version() -> None:
-    assert tikiagent.__version__ == "0.2.0"
+    assert tikiagent.__version__ == "0.3.0"
