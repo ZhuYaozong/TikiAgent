@@ -3,13 +3,24 @@
 from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 
+from tikiagent.orchestration.models import (
+    ActorResult,
+    Plan,
+    PlannerDecision,
+    VerificationReport,
+)
+
 
 MessagePayload = dict[str, Any]
 ToolResultPayload = dict[str, Any]
 WorkflowStatus = Literal[
     "running",
+    "planning",
+    "executing",
+    "verifying",
     "completed",
     "max_steps",
+    "max_attempts",
     "failed",
 ]
 
@@ -54,6 +65,16 @@ class TikiState(TypedDict):
     pending_tool_calls: list[PendingToolCall]
     tool_results: Annotated[list[ToolResultPayload], append_tool_results]
 
+    # Planning and verification
+    plan: Plan | None
+    acceptance_criteria: list[str]
+    planner_decision: PlannerDecision | None
+    actor_instruction: str
+    actor_result: ActorResult | None
+    verification_report: VerificationReport | None
+    attempts: int
+    max_attempts: int
+
     # Runtime references and limits
     workspace_id: str
     step_count: int
@@ -86,9 +107,54 @@ def create_initial_state(
         ],
         "pending_tool_calls": [],
         "tool_results": [],
+        "plan": None,
+        "acceptance_criteria": [],
+        "planner_decision": None,
+        "actor_instruction": "",
+        "actor_result": None,
+        "verification_report": None,
+        "attempts": 0,
+        "max_attempts": 1,
         "workspace_id": workspace_id,
         "step_count": 0,
         "max_steps": max_steps,
         "status": "running",
+        "final_result": None,
+    }
+
+
+def create_plan_verify_state(
+    *,
+    task: str,
+    workspace_id: str,
+    max_steps: int,
+    max_attempts: int,
+    session_id: str | None = None,
+) -> TikiState:
+    """创建外层 Plan → Execute → Verify 工作流状态。"""
+
+    if max_steps < 1:
+        raise ValueError("max_steps 必须大于 0")
+    if max_attempts < 1:
+        raise ValueError("max_attempts 必须大于 0")
+
+    return {
+        "task": task,
+        "session_id": session_id or str(uuid4()),
+        "messages": [],
+        "pending_tool_calls": [],
+        "tool_results": [],
+        "plan": None,
+        "acceptance_criteria": [],
+        "planner_decision": None,
+        "actor_instruction": "",
+        "actor_result": None,
+        "verification_report": None,
+        "attempts": 0,
+        "max_attempts": max_attempts,
+        "workspace_id": workspace_id,
+        "step_count": 0,
+        "max_steps": max_steps,
+        "status": "planning",
         "final_result": None,
     }

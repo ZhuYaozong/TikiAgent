@@ -160,3 +160,16 @@ def build_file_registry(workspace: Workspace) -> ToolRegistry:
     for tool in tools:
         registry.register(tool)
     return registry
+
+
+def build_read_only_file_registry(workspace: Workspace) -> ToolRegistry:
+    """只暴露读取、列表和搜索能力的文件工具注册表。"""
+
+    full_registry = build_file_registry(workspace)
+    registry = ToolRegistry()
+    for name in ("read_file", "list_files", "grep"):
+        tool = full_registry.get(name)
+        if tool is None:  # pragma: no cover - 内部注册契约防线
+            raise RuntimeError(f"缺少只读工具：{name}")
+        registry.register(tool)
+    return registry

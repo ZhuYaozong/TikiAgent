@@ -6,6 +6,7 @@ from tikiagent.orchestration.state import (
     append_messages,
     append_tool_results,
     create_initial_state,
+    create_plan_verify_state,
 )
 
 
@@ -55,4 +56,30 @@ def test_max_steps_must_be_positive() -> None:
             system_prompt="prompt",
             workspace_id="workspace",
             max_steps=0,
+        )
+
+
+def test_create_plan_verify_state_has_control_plane_defaults() -> None:
+    state = create_plan_verify_state(
+        task="修复代码",
+        workspace_id="workspace",
+        max_steps=8,
+        max_attempts=3,
+        session_id="session",
+    )
+
+    assert state["status"] == "planning"
+    assert state["plan"] is None
+    assert state["attempts"] == 0
+    assert state["max_attempts"] == 3
+    assert state["messages"] == []
+
+
+def test_max_attempts_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="max_attempts"):
+        create_plan_verify_state(
+            task="task",
+            workspace_id="workspace",
+            max_steps=8,
+            max_attempts=0,
         )

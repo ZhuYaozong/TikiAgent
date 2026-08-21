@@ -2,7 +2,12 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
+
+from pydantic import BaseModel
+
+
+StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,3 +34,13 @@ class ModelClient(Protocol):
         messages: Sequence[Mapping[str, Any]],
         tool_schemas: Sequence[Mapping[str, Any]],
     ) -> ModelResponse: ...
+
+
+class StructuredModelClient(Protocol):
+    """Planner 等结构化节点依赖的最小模型接口。"""
+
+    def complete_structured(
+        self,
+        messages: Sequence[Mapping[str, Any]],
+        response_type: type[StructuredModel],
+    ) -> StructuredModel: ...
