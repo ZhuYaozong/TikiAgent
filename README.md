@@ -2,7 +2,7 @@
 
 TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。它使用 Supervisor 根据任务动态调度 ResearchAgent 和 CodeAgent，通过统一 Verification Gate 验证每次 Specialist 交付，再由 Supervisor 决定继续委派或结束。Context Engine 根据当前 Agent、任务阶段和显式引用重新构建 Base Context，避免 Specialist 直接继承全部历史。
 
-当前版本为 **v0.5.0a2 Context Engine II**。
+当前版本为 **v0.6.0a1 Harness Gate / Enforce / Isolate**。
 
 ## v0.5 Context-aware Multi-Agent 架构
 
@@ -99,6 +99,122 @@ Local Compressor 在**每一轮 ReAct 模型调用前**检查不断增长的局�
 
 Base Compressor 和 Local Compressor 使用独立 Protocol。当前默认是确定性 Rule-Based 实现：Base Summary 替换非保护 History 原文；Local Summary 替换旧 Interaction 并保留最近完整交互。LLM Compressor 尚未实现，但不需要改变 Runtime 接口即可扩展。
 
+## v0.6a1 Harness Security Substrate
+
+正式 Harness 在原有 Registry、Dispatcher、Workspace 和 Command Runtime 之上增加执行前安全管线：
+
+```text
+Raw ToolCall
+    ↓
+Basic ToolCall Validation
+    ↓
+Tool Exposure Guard
+    ↓
+Dispatcher.prepare()
+├── Registry Lookup
+├── Arguments Validation
+└── Canonical Arguments
+    ↓
+PermissionPolicy
+   /      |       \
+ALLOW    ASK      DENY
+  │       │         └── stop
+  │   ApprovalRequest
+  │       ↓
+  │   ApprovalDecision
+  │       ↓
+  └───────┤
+          ↓
+   before_execute()
+          ↓
+ Dispatcher.execute()
+          ↓
+ Workspace / Runtime Enforcement
+          ↓
+      ToolResult
+```
+
+职责保持分离：
+
+```text
+ToolSelector
+= 向模型展示哪些 Tool Schema
+
+ToolExposureGuard
+= 执行侧再次强制本轮能力范围
+
+PermissionPolicy
+= 当前规范化 ToolCall 是 ALLOW / ASK / DENY
+
+ApprovalGate
+= 外部是否批准这个具体 ToolCall
+
+Dispatcher
+= 参数校验、规范化并调用 Python handler
+
+Workspace / Runtime
+= 即使已经 ALLOW，也继续强制路径、cwd、timeout 和 output limit
+```
+
+`ExecutionScope.workspace_id` 是 Approval 的归属身份；`Workspace Boundary` 是文件路径是否真正逃出根目录的机械检查。两者不是同一个概念。
+
+Permission v1 只分析经过 Pydantic 校验的结构化 argv，不解析任意 Shell 字符串：
+
+```text
+python -m pytest / unittest       → ALLOW
+pip install / uv add / git commit → ASK
+未分类命令                         → DENY
+```
+
+`HarnessOutcome.status` 是唯一状态来源：
+
+```text
+completed
+→ tool_result != null
+
+awaiting_approval
+→ tool_result == null
+→ approval_request != null
+
+denied
+→ 失败 ToolResult
+→ handler 没有执行
+```
+
+Approval 同时绑定 `task_id`、`session_id`、`workspace_id`、工具名称和 canonical arguments。Scope mismatch、参数篡改、拒绝后重用和批准重放都会被拒绝。
+
+ASK 产生的是 Harness Runtime 中的待执行状态，不是 LocalMemory Observation：
+
+```text
+完整 Assistant ToolCall + ToolResult
+→ ReActInteraction
+→ LocalMemory
+
+尚未批准的 ToolCall
+→ ApprovalRequest / Pending Execution
+→ 不进入 LocalMemory
+```
+
+`Dispatcher.dispatch()` 为 v0.1～v0.5 Baseline 暂时保留，但它只是 legacy/internal compatibility API，会绕过 Exposure、Permission 和 Approval。新正式 Agent 执行路径最终只能经过 `ExecutionHarness`。
+
+当前真实边界是：
+
+```text
+v0.6a1
+= Harness security substrate 已完成
+≠ 所有 Agent 已强制经过 Permission
+
+v0.6a2
+= Checkpoint / Resume / Trace
++ Agent Runtime 接入后成为唯一正式执行路径
+```
+
+离线演示不会安装真实依赖：
+
+```powershell
+uv run --locked python examples/harness_security.py
+```
+
 ## Result 与 Verification 身份链
 
 每次委派、交付和验证都通过 ID 明确关联：
@@ -141,7 +257,8 @@ and report.subject_agent == specialist
 - **FinalizationService**：在 FINISH Guard 通过后按 task_id/final_result_id 幂等持久化最终事实；
 - **TaskBoard**：结构化跟踪多个 Todo 的 owner、attempts 和身份链；
 - **TikiState**：整个 Workflow 唯一 canonical runtime state；
-- **Dispatcher**：验证工具名称与参数、执行 Python Tool、统一返回 `ToolResult`；
+- **ExecutionHarness**：按 Exposure → Permission → Approval → Runtime 顺序执行安全管线；
+- **Dispatcher**：底层参数规范化与 Python handler 调用；`dispatch()` 仅为 legacy/internal 兼容入口；
 - **Workspace**：拒绝绝对路径和目录逃逸；
 - **ModelClient**：隔离 OpenAI-compatible 模型协议，支持 DeepSeek 和本地 vLLM。
 
@@ -157,7 +274,8 @@ ContextBuilder = 决定怎样组装 Base Context
 PromptAssembler = 决定当前应该怎样工作
 ToolSelector = 决定本轮向模型展示哪些工具
 Tool Exposure Guard = 拒绝调用本轮未展示工具
-Permission = 即使工具存在且已展示，当前是否允许执行（v0.6）
+Permission = 即使工具存在且已展示，当前是否允许执行
+Approval = 是否授权当前 Scope 下的这个具体规范化 ToolCall
 ```
 
 ## Tool Isolation
@@ -405,10 +523,14 @@ src/tikiagent/
 │   ├── retriever.py
 │   └── task_board.py
 ├── harness/
+│   ├── approval.py
 │   ├── command_tools.py
 │   ├── dispatcher.py
+│   ├── execution.py
 │   ├── file_tools.py
+│   ├── guards.py
 │   ├── models.py
+│   ├── permission.py
 │   ├── registry.py
 │   ├── web_tools.py
 │   └── workspace.py
@@ -445,6 +567,12 @@ src/tikiagent/
 - 多 ToolCall / ToolResult 的原子 Interaction 裁剪；
 - 同一次运行切换 debugging 保留 LocalMemory，重新委派不继承；
 - 动态 Prompt、Tool View 与 `tool_not_exposed` 运行时保护；
+- Exposure 在 Permission 前执行，隐藏工具不会进入策略评估；
+- ALLOW / ASK / DENY 对 handler 的真实 Enforce；
+- Approval 的 task/session/workspace/参数绑定与一次性消费；
+- ASK 不产生 ToolResult，也不能形成不完整 ReActInteraction；
+- 结构化 argv 的测试命令、环境变更和未分类命令策略；
+- `before_execute` 严格位于 Approval PASS 与 handler 之间；
 - Notepad 审批、作用域过滤、幂等写入和 Markdown 重载；
 - FINISH Guard 后 Finalization 以及节点重放幂等性；
 - History Store 幂等写入、作用域和冲突检查；
@@ -459,13 +587,15 @@ src/tikiagent/
 ## 当前限制
 
 - Command Runtime 的 Workspace `cwd` 限制不是操作系统 Sandbox，子进程仍可能主动访问 Workspace 外资源；
-- 尚未实现 Permission、Human Approval、Checkpoint、Resume 和正式 Trace；
+- v0.6a1 已实现 Permission 与进程内 Approval；Checkpoint、Resume 和正式 Trace 将在 v0.6a2 实现；
+- `InMemoryApprovalLedger` 不跨进程，不能代替 v0.6a2 的权威 Checkpoint；
+- 现有 Agent Loop 仍使用 legacy Dispatcher；v0.6a2 完成 Runtime/Resume 接入后才强制使用 ExecutionHarness；
 - `InMemoryHistoryStore` 在进程退出后不保留数据，持久化后端将在后续阶段实现；
 - 默认 `InMemoryNotepadStore` 不跨进程；应用可以显式使用 `.tiki/NOTEPAD.md` 的 `MarkdownNotepadStore`；
 - 当前 Token 统计是字符近似值，不是供应商精确 Tokenizer；
 - 当前 Compressor 是确定性规则实现，尚未实现 LLM Structured Summary；
 - Recent Window 按完整 Interaction 数量裁剪，尚未升级为 token-aware window；
-- Tool Selector 和 Exposure Guard 不是安全 Permission；ALLOW / ASK / DENY 将在 v0.6 实现；
+- Tool Selector 与 Exposure Guard 仍不等于 Permission；v0.6a1 已把三者作为独立执行层；
 - Research rule verification 能证明来源来自真实 Web Observation，不能自动证明来源内容绝对真实；
 - Supervisor 的语义规划依赖模型质量，关键 FINISH 与身份关联由程序规则保护；
 - OpenAI-compatible 后端共享协议格式，但不同模型的 Tool Calling 能力仍可能不同。
@@ -478,7 +608,8 @@ src/tikiagent/
 - [x] v0.4 Supervisor、ResearchAgent、CodeAgent、Handoff、Verification Gate；
 - [x] v0.5 Context I：History、Retriever、Task Board、Context Profiles、Context Builder；
 - [x] v0.5 Context II：Monitor、Compressor、Notepad、动态 Prompt/Tool、Finalization；
-- [ ] v0.6 Permission、Approval、Checkpoint、Resume、Trace；
+- [x] v0.6a1 Gate / Enforce / Isolate：Permission、Approval 与安全执行管线；
+- [ ] v0.6a2 Persist / Observe：Checkpoint、Resume、Trace 与 Agent Runtime 接入；
 - [ ] Session、CLI、Event Stream 与 Evaluation；
 - [ ] Single-Agent / Plan-Verify / Multi-Agent / Context Engine 消融实验。
 

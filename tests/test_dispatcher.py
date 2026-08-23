@@ -58,3 +58,20 @@ def test_tool_execution_error_is_preserved(tmp_path: Path) -> None:
     assert result.error is not None
     assert result.error.code == "file_not_found"
     assert result.error.details == {"path": "missing.txt"}
+
+
+def test_prepare_does_not_execute_handler(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path / "workspace")
+    dispatcher = Dispatcher(build_file_registry(workspace))
+
+    prepared = dispatcher.prepare(
+        {
+            "tool_call_id": "call-write",
+            "name": "write_file",
+            "arguments": {"path": "answer.txt", "content": "prepared"},
+        }
+    )
+
+    assert prepared.name == "write_file"
+    assert prepared.arguments == {"path": "answer.txt", "content": "prepared"}
+    assert not (workspace.root / "answer.txt").exists()

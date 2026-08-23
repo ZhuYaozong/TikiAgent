@@ -8,6 +8,7 @@ from tikiagent.context.models import (
     ToolView,
 )
 from tikiagent.context.profiles import DEFAULT_CONTEXT_PROFILES
+from tikiagent.harness.guards import ToolExposureGuard as HarnessToolExposureGuard
 from tikiagent.harness.registry import ToolRegistry
 
 
@@ -44,8 +45,11 @@ class ToolSelector:
 
 
 class ToolExposureGuard:
-    """阻止模型调用本轮没有看到的工具；这仍不是 Permission。"""
+    """Context 兼容入口；实际判断委托给 Harness Plane。"""
 
     @staticmethod
     def allows(tool_name: str, tool_view: ToolView) -> bool:
-        return tool_name in tool_view.exposed_names
+        return HarnessToolExposureGuard.allows(
+            tool_name,
+            tool_view.exposed_names,
+        )
