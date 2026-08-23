@@ -3,10 +3,11 @@
 from tikiagent.agents import (
     AgentRunResult,
     MaxStepsExceeded,
+    MultiAgentCodeAgent,
     ReActCodeActor,
 )
 from tikiagent.harness import ToolResult
-from tikiagent.orchestration import Plan
+from tikiagent.orchestration import Handoff, Plan
 
 
 class SuccessfulAgent:
@@ -76,3 +77,56 @@ def test_actor_max_steps_becomes_structured_result() -> None:
     assert result.completed is False
     assert result.steps == 3
     assert "最大步数" in result.summary
+
+
+class SuccessfulMultiAgent:
+    max_steps = 6
+
+    def run(self, task: str) -> AgentRunResult:
+        assert "research_result" in task
+        return AgentRunResult(
+            final_text="网页完成",
+            steps=3,
+            tool_results=(
+                ToolResult(
+                    tool_call_id="write-1",
+                    tool_name="write_file",
+                    ok=True,
+                    output={"path": "comparison.html"},
+                ),
+                ToolResult(
+                    tool_call_id="test-1",
+                    tool_name="run_command",
+                    ok=True,
+                    output={
+                        "command": ["python", "check.py"],
+                        "exit_code": 0,
+                        "timed_out": False,
+                    },
+                ),
+            ),
+            messages=({"role": "system", "content": "private"},),
+        )
+
+
+def test_multi_agent_code_result_links_handoff_without_messages() -> None:
+    agent = MultiAgentCodeAgent(SuccessfulMultiAgent())
+    handoff = Handoff(
+        handoff_id="handoff-code-1",
+        from_agent="supervisor",
+        to_agent="code_agent",
+        instruction="create report",
+        context_refs=["research_result"],
+    )
+
+    result = agent.run(
+        handoff=handoff,
+        context_payload={"research_result": {"summary": "research"}},
+    )
+
+    assert result.handoff_id == "handoff-code-1"
+    assert result.result_id
+    assert result.changed_files == ["comparison.html"]
+    assert "exit_code=0" in result.tests_run[0]
+    assert result.context_refs_used == ["research_result"]
+    assert "messages" not in result.model_dump()

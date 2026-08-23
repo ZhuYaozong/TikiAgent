@@ -15,11 +15,18 @@ from tikiagent.harness.models import (
 )
 from tikiagent.harness.registry import RegisteredTool, ToolRegistry
 from tikiagent.harness.workspace import Workspace
+from tikiagent.harness.web_tools import (
+    SearchSettings,
+    TavilyProvider,
+    build_web_registry,
+)
 
 __all__ = [
     "CommandResult",
     "Dispatcher",
     "RegisteredTool",
+    "SearchSettings",
+    "TavilyProvider",
     "ToolCall",
     "ToolError",
     "ToolExecutionError",
@@ -28,5 +35,6 @@ __all__ = [
     "Workspace",
     "build_file_registry",
     "build_read_only_file_registry",
+    "build_web_registry",
     "register_command_tool",
 ]
