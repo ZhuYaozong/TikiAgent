@@ -12,9 +12,12 @@ from tikiagent.context import (
     ContextBuilder,
     ContextProfile,
     ContextRequest,
+    FinalizationService,
     HistoryRecord,
     HistoryStore,
     InMemoryHistoryStore,
+    InMemoryNotepadStore,
+    NotepadStore,
     Retriever,
     create_task_board,
     next_actionable_todo,
@@ -87,6 +90,7 @@ class MultiAgentWorkflow:
         max_delegations: int = 4,
         recursion_limit: int = 30,
         history_store: HistoryStore | None = None,
+        notepad_store: NotepadStore | None = None,
         context_profiles: Mapping[
             ContextAgentName,
             ContextProfile,
@@ -106,9 +110,15 @@ class MultiAgentWorkflow:
         self.recursion_limit = recursion_limit
         self.max_steps = code_agent.max_steps if code_agent is not None else 1
         self.history_store = history_store or InMemoryHistoryStore()
+        self.notepad_store = notepad_store or InMemoryNotepadStore()
         self.context_builder = ContextBuilder(
             Retriever(self.history_store),
             context_profiles,
+            self.notepad_store,
+        )
+        self.finalization = FinalizationService(
+            history_store=self.history_store,
+            notepad_store=self.notepad_store,
         )
         self.graph = self._build_graph()
 
@@ -139,16 +149,9 @@ class MultiAgentWorkflow:
         )
         decision = self.supervisor.decide(decision_state, base_context)
         if decision.action == "finish":
-            unverified = [
-                specialist
-                for specialist in decision_state["required_specialists"]
-                if not latest_result_is_verified(decision_state, specialist)
-            ]
-            incomplete_todos = [
-                item.todo_id
-                for item in decision_state["task_board"].items.values()
-                if item.status != "completed"
-            ]
+            unverified, incomplete_todos = self._finish_guard_failures(
+                decision_state
+            )
             if unverified or incomplete_todos:
                 rejected = SupervisorDecision(
                     action="stop",
@@ -171,9 +174,10 @@ class MultiAgentWorkflow:
                 **updates,
                 "supervisor_decision": decision,
                 "current_agent": "supervisor",
-                "status": "completed",
+                "status": "finalizing",
                 "final_result": self._completion_text(decision_state),
-                "recent_events": ["supervisor: finish"],
+                "final_result_id": f"final:{decision_state['task_id']}",
+                "recent_events": ["supervisor: finish guard passed"],
             }
         if decision.action == "stop":
             return {
@@ -273,10 +277,16 @@ class MultiAgentWorkflow:
         handoff = self._require_pending_handoff(state, "code_agent")
         if self.code_agent is None:  # pragma: no cover - 路由前已保护
             raise RuntimeError("CodeAgent 未配置")
+        previous_report = state["specialist_verifications"].get("code_agent")
+        phase = (
+            "debugging"
+            if previous_report is not None and not previous_report.passed
+            else "coding"
+        )
         base_context = self._build_context(
             state=state,
             agent="code_agent",
-            phase="coding",
+            phase=phase,
             instruction=handoff.instruction,
             context_refs=[handoff.handoff_id, *handoff.context_refs],
             keywords=[handoff.instruction],
@@ -369,11 +379,54 @@ class MultiAgentWorkflow:
             ],
         }
 
+    def _finalization_node(self, state: TikiState) -> dict[str, Any]:
+        """只有 FINISH Guard 通过后的状态才能进入幂等收尾。"""
+
+        decision = state["supervisor_decision"]
+        if (
+            decision is None
+            or decision.action != "finish"
+            or state["status"] != "finalizing"
+            or state["final_result"] is None
+            or state["final_result_id"] is None
+        ):
+            raise RuntimeError("Finalization 缺少已通过 Guard 的 FINISH 状态")
+        unverified, incomplete_todos = self._finish_guard_failures(state)
+        if unverified or incomplete_todos:
+            raise RuntimeError(
+                "Finalization 拒绝执行：最新身份链或 TaskBoard 已失效"
+            )
+        refs = self._supervisor_context_refs(state)
+        report = self.finalization.finalize(
+            task_id=state["task_id"],
+            session_id=state["session_id"],
+            final_result_id=state["final_result_id"],
+            final_result=state["final_result"],
+            refs=refs,
+        )
+        return {
+            "current_agent": "supervisor",
+            "status": "completed",
+            "finalization_report": report,
+            "history_cursor": self.history_store.cursor(),
+            "recent_events": [
+                "finalization: replay"
+                if report.already_finalized
+                else "finalization: persisted"
+            ],
+        }
+
     @staticmethod
     def _route_after_supervisor(
         state: TikiState,
-    ) -> Literal["research", "code", "end"]:
+    ) -> Literal["research", "code", "finalize", "end"]:
         decision = state["supervisor_decision"]
+        if (
+            decision is not None
+            and decision.action == "finish"
+            and state["status"] == "finalizing"
+        ):
+            return "finalize"
         if decision is None or decision.action != "delegate":
             return "end"
         if decision.target_agent == "research_agent":
@@ -388,15 +441,22 @@ class MultiAgentWorkflow:
         builder.add_node("research_agent", self._research_node)
         builder.add_node("code_agent", self._code_node)
         builder.add_node("verification_gate", self._verification_node)
+        builder.add_node("finalization", self._finalization_node)
         builder.add_edge(START, "supervisor")
         builder.add_conditional_edges(
             "supervisor",
             self._route_after_supervisor,
-            {"research": "research_agent", "code": "code_agent", "end": END},
+            {
+                "research": "research_agent",
+                "code": "code_agent",
+                "finalize": "finalization",
+                "end": END,
+            },
         )
         builder.add_edge("research_agent", "verification_gate")
         builder.add_edge("code_agent", "verification_gate")
         builder.add_edge("verification_gate", "supervisor")
+        builder.add_edge("finalization", END)
         return builder.compile()
 
     def _build_context(
@@ -501,6 +561,22 @@ class MultiAgentWorkflow:
             if item.status == "completed"
         }
         return f"任务完成；已验证 Todo Result：{completed}"
+
+    @staticmethod
+    def _finish_guard_failures(
+        state: TikiState,
+    ) -> tuple[list[SpecialistName], list[str]]:
+        unverified = [
+            specialist
+            for specialist in state["required_specialists"]
+            if not latest_result_is_verified(state, specialist)
+        ]
+        incomplete_todos = [
+            item.todo_id
+            for item in state["task_board"].items.values()
+            if item.status != "completed"
+        ]
+        return unverified, incomplete_todos
 
     def initial_state(
         self,

@@ -4,6 +4,7 @@ from tikiagent.agents.supervisor import (
     SupervisorAgent,
     latest_result_is_verified,
 )
+from tikiagent.context import ContextMonitor, ContextRuntime
 from tikiagent.orchestration.models import VerificationReport
 from tikiagent.orchestration.state import create_multi_agent_state
 
@@ -31,6 +32,16 @@ class StructuredModel:
                 "context_refs": ["untrusted-model-ref"],
             }
         )
+
+
+class RecordingMonitor(ContextMonitor):
+    def __init__(self) -> None:
+        super().__init__()
+        self.response_schemas = []
+
+    def measure(self, candidate, budget):
+        self.response_schemas.append(candidate.response_schema)
+        return super().measure(candidate, budget)
 
 
 def state():
@@ -146,3 +157,16 @@ def test_max_delegations_stops_only_when_more_work_is_needed() -> None:
     decision = SupervisorAgent(StructuredModel()).decide(value)
 
     assert decision.action == "stop"
+
+
+def test_supervisor_structured_schema_is_part_of_monitored_call() -> None:
+    monitor = RecordingMonitor()
+    supervisor = SupervisorAgent(
+        StructuredModel(),
+        context_runtime=ContextRuntime(monitor=monitor),
+    )
+
+    supervisor.plan("hybrid")
+
+    assert monitor.response_schemas
+    assert monitor.response_schemas[0]["title"] == "SupervisorPlan"

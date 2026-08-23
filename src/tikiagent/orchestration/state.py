@@ -3,7 +3,7 @@
 from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 
-from tikiagent.context.models import TaskBoard
+from tikiagent.context.models import FinalizationReport, TaskBoard
 from tikiagent.orchestration.models import (
     ActorResult,
     Handoff,
@@ -28,6 +28,7 @@ WorkflowStatus = Literal[
     "max_attempts",
     "delegating",
     "validating",
+    "finalizing",
     "stopped",
     "failed",
 ]
@@ -141,6 +142,8 @@ class TikiState(TypedDict):
     # Completion
     status: WorkflowStatus
     final_result: str | None
+    final_result_id: str | None
+    finalization_report: FinalizationReport | None
 
 
 def create_initial_state(
@@ -192,6 +195,8 @@ def create_initial_state(
         "max_steps": max_steps,
         "status": "running",
         "final_result": None,
+        "final_result_id": None,
+        "finalization_report": None,
     }
 
 

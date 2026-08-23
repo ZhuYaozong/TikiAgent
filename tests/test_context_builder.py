@@ -5,6 +5,8 @@ from tikiagent.context import (
     ContextRequest,
     HistoryRecord,
     InMemoryHistoryStore,
+    InMemoryNotepadStore,
+    NotepadEntry,
     Retriever,
     TaskBoard,
     add_todo,
@@ -119,3 +121,41 @@ def test_base_context_contains_history_but_no_react_messages() -> None:
     )
     assert "messages" not in dumped
     assert "research summary" in context.render()
+
+
+def test_context_builder_only_adds_relevant_approved_notepad() -> None:
+    notes = InMemoryNotepadStore()
+    notes.append(
+        NotepadEntry(
+            note_id="task-note",
+            content="keep source URL",
+            scope="task",
+            task_id="task-1",
+            source_refs=["result-1"],
+            approved=True,
+        )
+    )
+    notes.append(
+        NotepadEntry(
+            note_id="other-task",
+            content="unrelated",
+            scope="task",
+            task_id="task-2",
+            source_refs=["result-2"],
+            approved=True,
+        )
+    )
+    context = ContextBuilder(
+        Retriever(InMemoryHistoryStore()),
+        notepad_store=notes,
+    ).build(
+        request=request("code_agent"),
+        task="hybrid",
+        acceptance_criteria=["verified"],
+        task_board=board(),
+    )
+
+    assert [
+        item.note_id for item in context.working_memory.relevant_notepad
+    ] == ["task-note"]
+    assert "unrelated" not in context.render()

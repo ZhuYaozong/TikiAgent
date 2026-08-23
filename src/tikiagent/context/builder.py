@@ -10,6 +10,7 @@ from tikiagent.context.models import (
     TaskBoard,
     WorkingMemory,
 )
+from tikiagent.context.notepad import InMemoryNotepadStore, NotepadStore
 from tikiagent.context.profiles import DEFAULT_CONTEXT_PROFILES
 from tikiagent.context.retriever import Retriever
 from tikiagent.context.task_board import todos_for_owner, todos_for_refs
@@ -22,12 +23,14 @@ class ContextBuilder:
         self,
         retriever: Retriever,
         profiles: Mapping[ContextAgentName, ContextProfile] | None = None,
+        notepad_store: NotepadStore | None = None,
     ) -> None:
         self.retriever = retriever
         self.profiles = {
             **DEFAULT_CONTEXT_PROFILES,
             **dict(profiles or {}),
         }
+        self.notepad_store = notepad_store or InMemoryNotepadStore()
 
     def build(
         self,
@@ -47,10 +50,32 @@ class ContextBuilder:
         else:
             todos = todos_for_owner(task_board, request.agent)
 
+        relevant_notepad = self.notepad_store.list_relevant(
+            task_id=request.task_id,
+            session_id=request.session_id,
+            agent=request.agent,
+            limit=profile.max_notepad_entries,
+        )
+        protected_refs = list(
+            dict.fromkeys(
+                [
+                    *request.context_refs,
+                    *[
+                        value
+                        for todo in todos
+                        for value in (
+                            todo.handoff_id,
+                            todo.result_id,
+                            todo.verification_id,
+                        )
+                        if value is not None
+                    ],
+                ]
+            )
+        )
+
         return BaseContext(
             agent=request.agent,
-            role=profile.role,
-            system_rules=profile.system_rules,
             working_memory=WorkingMemory(
                 task=task,
                 phase=request.phase,
@@ -58,5 +83,7 @@ class ContextBuilder:
                 acceptance_criteria=acceptance_criteria,
                 todos=todos,
                 relevant_history=history,
+                relevant_notepad=relevant_notepad,
+                protected_refs=protected_refs,
             ),
         )
