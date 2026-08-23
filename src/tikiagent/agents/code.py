@@ -1,7 +1,11 @@
 """把现有 ReAct Agent 适配为不同工作流的 Code 执行组件。"""
 
-from tikiagent.agents.react import MaxStepsExceeded, ReActAgent
+from tikiagent.agents.react import AgentRunResult, MaxStepsExceeded, ReActAgent
+from tikiagent.agents.resumable import AgentRunPause, ResumableReActAgent
 from tikiagent.context.models import BaseContext
+from tikiagent.harness.checkpoint import WorkflowResumeSnapshot
+from tikiagent.harness.models import ApprovalDecision, ExecutionContext
+from tikiagent.harness.recovery import ReconcileResult, RecoveryDecision
 from tikiagent.orchestration.models import (
     ActorResult,
     CodeResult,
@@ -58,13 +62,16 @@ class MultiAgentCodeAgent:
     def __init__(self, agent: ReActAgent) -> None:
         self.agent = agent
         self.max_steps = agent.max_steps
+        self.supports_resume = isinstance(agent, ResumableReActAgent)
 
     def run(
         self,
         *,
         handoff: Handoff,
         base_context: BaseContext,
-    ) -> CodeResult:
+        execution_context: ExecutionContext | None = None,
+        workflow_snapshot: WorkflowResumeSnapshot | None = None,
+    ) -> CodeResult | AgentRunPause:
         if handoff.to_agent != "code_agent":
             raise ValueError("CodeAgent 收到了错误目标的 Handoff")
         if base_context.agent != "code_agent":
@@ -73,10 +80,18 @@ class MultiAgentCodeAgent:
         # ReActAgent.run() 会为本次执行创建局部 messages；Base Context 只作为
         # 本轮初始输入，不接收其他 Agent 的内部 messages。
         try:
-            run_result = self.agent.run(
-                base_context.render(),
-                base_context=base_context,
-            )
+            if self.supports_resume:
+                run_result = self.agent.run(
+                    base_context.render(),
+                    base_context=base_context,
+                    execution_context=execution_context,
+                    workflow_snapshot=workflow_snapshot,
+                )
+            else:
+                run_result = self.agent.run(
+                    base_context.render(),
+                    base_context=base_context,
+                )
         except MaxStepsExceeded as error:
             return CodeResult(
                 handoff_id=handoff.handoff_id,
@@ -86,6 +101,40 @@ class MultiAgentCodeAgent:
                 context_refs_used=handoff.context_refs,
             )
 
+        if isinstance(run_result, AgentRunPause):
+            return run_result
+        return self._to_code_result(handoff, run_result)
+
+    def resume(
+        self,
+        *,
+        handoff: Handoff,
+        checkpoint_id: str,
+        expected_revision: int,
+        approval_decision: ApprovalDecision | None = None,
+        recovery_decision: RecoveryDecision | None = None,
+        reconciliation: ReconcileResult | None = None,
+    ) -> CodeResult | AgentRunPause:
+        """仅供 Multi-Agent Graph 的 Resume Entry Node 调用。"""
+
+        if not isinstance(self.agent, ResumableReActAgent):
+            raise RuntimeError("当前 CodeAgent 不支持 Resume")
+        run_result = self.agent.resume(
+            checkpoint_id,
+            expected_revision=expected_revision,
+            approval_decision=approval_decision,
+            recovery_decision=recovery_decision,
+            reconciliation=reconciliation,
+        )
+        if isinstance(run_result, AgentRunPause):
+            return run_result
+        return self._to_code_result(handoff, run_result)
+
+    @staticmethod
+    def _to_code_result(
+        handoff: Handoff,
+        run_result: AgentRunResult,
+    ) -> CodeResult:
         tool_results = tuple(
             item.model_dump(mode="json") for item in run_result.tool_results
         )

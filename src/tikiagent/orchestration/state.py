@@ -3,6 +3,8 @@
 from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 
+from pydantic import TypeAdapter
+
 from tikiagent.context.models import FinalizationReport, TaskBoard
 from tikiagent.orchestration.models import (
     ActorResult,
@@ -31,6 +33,9 @@ WorkflowStatus = Literal[
     "finalizing",
     "stopped",
     "failed",
+    "awaiting_approval",
+    "recovery_required",
+    "awaiting_reconcile",
 ]
 
 RECENT_EVENT_LIMIT = 50
@@ -134,6 +139,12 @@ class TikiState(TypedDict):
     recent_events: Annotated[list[str], keep_recent_events]
     history_cursor: int
 
+    # Harness Resume 只保存引用；真正恢复必须从 Graph Resume Entry 重入。
+    resume_request: dict[str, Any] | None
+    runtime_checkpoint_id: str | None
+    runtime_checkpoint_revision: int | None
+    trace_cursor: int
+
     # Runtime references and limits
     workspace_id: str
     step_count: int
@@ -144,6 +155,21 @@ class TikiState(TypedDict):
     final_result: str | None
     final_result_id: str | None
     finalization_report: FinalizationReport | None
+
+
+_TIKI_STATE_ADAPTER = TypeAdapter(TikiState)
+
+
+def serialize_tiki_state(state: TikiState) -> dict[str, Any]:
+    """把 Pydantic 子模型转成可写入 Checkpoint 的 JSON 快照。"""
+
+    return _TIKI_STATE_ADAPTER.dump_python(state, mode="json")
+
+
+def restore_tiki_state(payload: dict[str, Any]) -> TikiState:
+    """严格按 canonical TikiState schema 恢复 Graph 输入。"""
+
+    return _TIKI_STATE_ADAPTER.validate_python(payload)
 
 
 def create_initial_state(
@@ -190,6 +216,10 @@ def create_initial_state(
         "specialist_verifications": {},
         "recent_events": [],
         "history_cursor": 0,
+        "resume_request": None,
+        "runtime_checkpoint_id": None,
+        "runtime_checkpoint_revision": None,
+        "trace_cursor": 0,
         "workspace_id": workspace_id,
         "step_count": 0,
         "max_steps": max_steps,
@@ -243,11 +273,17 @@ def create_plan_verify_state(
         "specialist_verifications": {},
         "recent_events": [],
         "history_cursor": 0,
+        "resume_request": None,
+        "runtime_checkpoint_id": None,
+        "runtime_checkpoint_revision": None,
+        "trace_cursor": 0,
         "workspace_id": workspace_id,
         "step_count": 0,
         "max_steps": max_steps,
         "status": "planning",
         "final_result": None,
+        "final_result_id": None,
+        "finalization_report": None,
     }
 
 

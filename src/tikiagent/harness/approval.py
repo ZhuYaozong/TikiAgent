@@ -53,6 +53,32 @@ class ApprovalGate:
         current_call: ValidatedToolCall,
         context: ExecutionContext,
     ) -> ToolError | None:
+        error = self.validate_decision(
+            request=request,
+            decision=decision,
+            current_call=current_call,
+            context=context,
+        )
+        if error is not None:
+            return error
+        self.mark_resolved(request.request_id)
+        if not decision.approved:
+            return ToolError(
+                code="approval_rejected",
+                message="外部审批拒绝了工具执行",
+            )
+        return None
+
+    def validate_decision(
+        self,
+        *,
+        request: ApprovalRequest,
+        decision: ApprovalDecision,
+        current_call: ValidatedToolCall,
+        context: ExecutionContext,
+    ) -> ToolError | None:
+        """只验证审批绑定，不提前消费执行事实。"""
+
         stored = self.ledger.requests.get(request.request_id)
         if stored is None or stored != request:
             return ToolError(
@@ -89,14 +115,20 @@ class ApprovalGate:
                 message="工具名称、规范化参数或 scope 在批准后发生变化",
             )
 
-        # 无论批准还是拒绝，决定都只能消费一次。
-        self.ledger.resolved.add(request.request_id)
-        if not decision.approved:
-            return ToolError(
-                code="approval_rejected",
-                message="外部审批拒绝了工具执行",
-            )
         return None
+
+    def mark_resolved(self, request_id: str) -> None:
+        """在执行状态已经安全持久化后，才消费一次性审批。"""
+
+        self.ledger.resolved.add(request_id)
+
+    def restore_request(self, request: ApprovalRequest) -> None:
+        """新进程从 Checkpoint 恢复尚未消费的 ApprovalRequest。"""
+
+        existing = self.ledger.requests.get(request.request_id)
+        if existing is not None and existing != request:
+            raise ValueError("恢复的 ApprovalRequest 与 Ledger 现有内容冲突")
+        self.ledger.requests[request.request_id] = request
 
 
 def approval_fingerprint(

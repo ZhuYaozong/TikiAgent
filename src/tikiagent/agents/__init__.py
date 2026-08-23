@@ -8,6 +8,10 @@ from tikiagent.agents.react import (
     ReActAgent,
 )
 from tikiagent.agents.research import ResearchAgent
+from tikiagent.agents.resumable import (
+    AgentRunPause,
+    ResumableReActAgent,
+)
 from tikiagent.agents.supervisor import SupervisorAgent
 from tikiagent.agents.verifier import (
     CodeEnvironmentVerifier,
@@ -18,6 +22,7 @@ from tikiagent.agents.verifier import (
 
 __all__ = [
     "AgentRunResult",
+    "AgentRunPause",
     "CommandCheck",
     "CodeEnvironmentVerifier",
     "EnvironmentVerifier",
@@ -25,6 +30,7 @@ __all__ = [
     "MultiAgentCodeAgent",
     "PlannerAgent",
     "ReActAgent",
+    "ResumableReActAgent",
     "ReActCodeActor",
     "ResearchAgent",
     "ResearchResultVerifier",

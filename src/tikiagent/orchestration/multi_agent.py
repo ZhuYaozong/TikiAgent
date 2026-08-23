@@ -5,6 +5,7 @@ from typing import Any, Literal, Protocol, cast
 
 from langgraph.graph import END, START, StateGraph
 
+from tikiagent.agents.resumable import AgentRunPause
 from tikiagent.agents.supervisor import latest_result_is_verified
 from tikiagent.context import (
     BaseContext,
@@ -17,6 +18,7 @@ from tikiagent.context import (
     HistoryStore,
     InMemoryHistoryStore,
     InMemoryNotepadStore,
+    JsonlHistoryStore,
     NotepadStore,
     Retriever,
     create_task_board,
@@ -25,6 +27,12 @@ from tikiagent.context import (
     record_verification,
     start_todo,
 )
+from tikiagent.harness.checkpoint import (
+    HistoryResumeReference,
+    WorkflowResumeSnapshot,
+)
+from tikiagent.harness.models import ApprovalDecision, ExecutionContext, ExecutionScope
+from tikiagent.harness.recovery import ReconcileResult, RecoveryDecision
 from tikiagent.orchestration.models import (
     CodeResult,
     Handoff,
@@ -34,7 +42,12 @@ from tikiagent.orchestration.models import (
     SupervisorPlan,
     VerificationReport,
 )
-from tikiagent.orchestration.state import TikiState, create_multi_agent_state
+from tikiagent.orchestration.state import (
+    TikiState,
+    create_multi_agent_state,
+    restore_tiki_state,
+    serialize_tiki_state,
+)
 
 
 class Supervisor(Protocol):
@@ -111,16 +124,22 @@ class MultiAgentWorkflow:
         self.max_steps = code_agent.max_steps if code_agent is not None else 1
         self.history_store = history_store or InMemoryHistoryStore()
         self.notepad_store = notepad_store or InMemoryNotepadStore()
+        self.context_profiles = context_profiles
+        self._bind_context_services()
+        self.graph = self._build_graph()
+
+    def _bind_context_services(self) -> None:
+        """切换持久化 History 后重建依赖它的 Context 服务。"""
+
         self.context_builder = ContextBuilder(
             Retriever(self.history_store),
-            context_profiles,
+            self.context_profiles,
             self.notepad_store,
         )
         self.finalization = FinalizationService(
             history_store=self.history_store,
             notepad_store=self.notepad_store,
         )
-        self.graph = self._build_graph()
 
     def _supervisor_node(self, state: TikiState) -> dict[str, Any]:
         updates: dict[str, Any] = {}
@@ -225,6 +244,7 @@ class MultiAgentWorkflow:
             "latest_handoff": handoff,
             "task_board": task_board,
             "history_cursor": self.history_store.cursor(),
+            "trace_cursor": self._runtime_trace_cursor(),
             "delegation_count": state["delegation_count"] + 1,
             "status": "delegating",
             "recent_events": [f"supervisor: delegate {target}"],
@@ -242,7 +262,22 @@ class MultiAgentWorkflow:
             context_refs=[handoff.handoff_id, *handoff.context_refs],
             keywords=[handoff.instruction],
         )
-        result = self.research_agent.run(handoff, base_context)
+        if getattr(self.research_agent, "supports_harness", False):
+            result = self.research_agent.run(
+                handoff,
+                base_context,
+                execution_context=ExecutionContext(
+                    scope=ExecutionScope(
+                        task_id=state["task_id"],
+                        session_id=state["session_id"],
+                        workspace_id=state["workspace_id"],
+                    ),
+                    agent="research_agent",
+                    exposed_tools=set(),
+                ),
+            )
+        else:
+            result = self.research_agent.run(handoff, base_context)
         completed = handoff.model_copy(
             update={"result_id": result.result_id, "status": "completed"}
         )
@@ -266,6 +301,7 @@ class MultiAgentWorkflow:
             "latest_handoff": completed,
             "task_board": task_board,
             "history_cursor": self.history_store.cursor(),
+            "trace_cursor": self._runtime_trace_cursor(),
             "specialist_results": {
                 "research_agent": result.model_dump(mode="json")
             },
@@ -291,10 +327,40 @@ class MultiAgentWorkflow:
             context_refs=[handoff.handoff_id, *handoff.context_refs],
             keywords=[handoff.instruction],
         )
-        result = self.code_agent.run(
-            handoff=handoff,
-            base_context=base_context,
-        )
+        if getattr(self.code_agent, "supports_resume", False):
+            workflow_snapshot = self._workflow_snapshot(state)
+            result = self.code_agent.run(
+                handoff=handoff,
+                base_context=base_context,
+                execution_context=ExecutionContext(
+                    scope=ExecutionScope(
+                        task_id=state["task_id"],
+                        session_id=state["session_id"],
+                        workspace_id=state["workspace_id"],
+                    ),
+                    agent="code_agent",
+                    # ContextRuntime 会在每次模型调用时写入真实 Tool View。
+                    exposed_tools=set(),
+                ),
+                workflow_snapshot=workflow_snapshot,
+            )
+        else:
+            result = self.code_agent.run(
+                handoff=handoff,
+                base_context=base_context,
+            )
+        if isinstance(result, AgentRunPause):
+            return self._pause_updates(result)
+        return self._record_code_result(state, handoff, result)
+
+    def _record_code_result(
+        self,
+        state: TikiState,
+        handoff: Handoff,
+        result: CodeResult,
+    ) -> dict[str, Any]:
+        """正常执行与 Resume 共用同一条 Result/History 身份链。"""
+
         completed = handoff.model_copy(
             update={"result_id": result.result_id, "status": "completed"}
         )
@@ -326,8 +392,97 @@ class MultiAgentWorkflow:
             "specialist_results": {
                 "code_agent": result.model_dump(mode="json")
             },
+            "trace_cursor": self._runtime_trace_cursor(),
             "status": "validating",
             "recent_events": ["code_agent: result"],
+        }
+
+    def _workflow_snapshot(self, state: TikiState) -> WorkflowResumeSnapshot:
+        """Checkpoint 必须能在新进程中同时恢复 Graph 与 History。"""
+
+        if not isinstance(self.history_store, JsonlHistoryStore):
+            raise RuntimeError(
+                "可恢复 CodeAgent 必须配置 JsonlHistoryStore，不能只保存 Agent Snapshot"
+            )
+        return WorkflowResumeSnapshot(
+            state=serialize_tiki_state(state),
+            history=HistoryResumeReference(
+                path=str(self.history_store.path),
+                cursor=self.history_store.cursor(),
+            ),
+        )
+
+    def _pause_updates(self, pause: AgentRunPause) -> dict[str, Any]:
+        """未完成 ToolCall 不伪造 ToolResult，也不进入 Verification。"""
+
+        return {
+            "current_agent": "code_agent",
+            "status": pause.status,
+            "runtime_checkpoint_id": pause.checkpoint_id,
+            "runtime_checkpoint_revision": pause.revision,
+            "trace_cursor": self._runtime_trace_cursor(),
+            "resume_request": None,
+            "recent_events": [f"code_agent: {pause.status}"],
+        }
+
+    def _runtime_trace_cursor(self) -> int:
+        """返回正式 Code Runtime 已持久化的最新 Trace sequence。"""
+
+        if self.code_agent is None or not getattr(
+            self.code_agent,
+            "supports_resume",
+            False,
+        ):
+            return 0
+        agent = getattr(self.code_agent, "agent")
+        coordinator = getattr(agent, "execution_coordinator")
+        events = coordinator.trace_store.list_events()
+        return events[-1].sequence if events else 0
+
+    def _resume_entry_node(self, state: TikiState) -> dict[str, Any]:
+        """所有恢复动作在 Graph 内执行，不在 Graph 外手工续跑。"""
+
+        request = state["resume_request"]
+        if request is None:
+            raise RuntimeError("Resume Entry 缺少 resume_request")
+        handoff = self._require_pending_handoff(state, "code_agent")
+        if self.code_agent is None or not getattr(
+            self.code_agent,
+            "supports_resume",
+            False,
+        ):
+            raise RuntimeError("当前 CodeAgent 不支持 Resume")
+        resume_method = getattr(self.code_agent, "resume")
+        approval_raw = request.get("approval_decision")
+        recovery_raw = request.get("recovery_decision")
+        reconcile_raw = request.get("reconciliation")
+        result = resume_method(
+            handoff=handoff,
+            checkpoint_id=request["checkpoint_id"],
+            expected_revision=request["expected_revision"],
+            approval_decision=(
+                ApprovalDecision.model_validate(approval_raw)
+                if approval_raw is not None
+                else None
+            ),
+            recovery_decision=(
+                RecoveryDecision.model_validate(recovery_raw)
+                if recovery_raw is not None
+                else None
+            ),
+            reconciliation=(
+                ReconcileResult.model_validate(reconcile_raw)
+                if reconcile_raw is not None
+                else None
+            ),
+        )
+        if isinstance(result, AgentRunPause):
+            return self._pause_updates(result)
+        return {
+            **self._record_code_result(state, handoff, result),
+            "resume_request": None,
+            "runtime_checkpoint_id": None,
+            "runtime_checkpoint_revision": None,
         }
 
     def _verification_node(self, state: TikiState) -> dict[str, Any]:
@@ -339,11 +494,22 @@ class MultiAgentWorkflow:
             raise RuntimeError("Verification Gate 缺少 Specialist Result")
 
         # 当前 Gate 是规则/环境验证，直接消费结构化数据，不构造 LLM Prompt。
-        report = self.verification_gate.verify(
-            handoff=handoff,
-            raw_result=raw_result,
-            specialist_results=state["specialist_results"],
-        )
+        verification_arguments = {
+            "handoff": handoff,
+            "raw_result": raw_result,
+            "specialist_results": state["specialist_results"],
+        }
+        if getattr(self.verification_gate, "supports_harness", False):
+            verification_arguments["execution_context"] = ExecutionContext(
+                scope=ExecutionScope(
+                    task_id=state["task_id"],
+                    session_id=state["session_id"],
+                    workspace_id=state["workspace_id"],
+                ),
+                agent="verifier",
+                exposed_tools=set(),
+            )
+        report = self.verification_gate.verify(**verification_arguments)
         result_id = raw_result.get("result_id")
         if not isinstance(result_id, str):
             raise RuntimeError("Specialist Result 缺少 result_id")
@@ -435,14 +601,37 @@ class MultiAgentWorkflow:
             return "code"
         raise RuntimeError("未知 target_agent")
 
+    @staticmethod
+    def _route_from_start(state: TikiState) -> Literal["normal", "resume"]:
+        """Resume 只能通过 START → resume_entry 重新进入 Graph。"""
+
+        return "resume" if state["resume_request"] is not None else "normal"
+
+    @staticmethod
+    def _route_after_code_or_resume(
+        state: TikiState,
+    ) -> Literal["verification", "end"]:
+        if state["status"] in {
+            "awaiting_approval",
+            "recovery_required",
+            "awaiting_reconcile",
+        }:
+            return "end"
+        return "verification"
+
     def _build_graph(self):
         builder = StateGraph(TikiState)
         builder.add_node("supervisor", self._supervisor_node)
         builder.add_node("research_agent", self._research_node)
         builder.add_node("code_agent", self._code_node)
+        builder.add_node("resume_entry", self._resume_entry_node)
         builder.add_node("verification_gate", self._verification_node)
         builder.add_node("finalization", self._finalization_node)
-        builder.add_edge(START, "supervisor")
+        builder.add_conditional_edges(
+            START,
+            self._route_from_start,
+            {"normal": "supervisor", "resume": "resume_entry"},
+        )
         builder.add_conditional_edges(
             "supervisor",
             self._route_after_supervisor,
@@ -454,7 +643,16 @@ class MultiAgentWorkflow:
             },
         )
         builder.add_edge("research_agent", "verification_gate")
-        builder.add_edge("code_agent", "verification_gate")
+        builder.add_conditional_edges(
+            "code_agent",
+            self._route_after_code_or_resume,
+            {"verification": "verification_gate", "end": END},
+        )
+        builder.add_conditional_edges(
+            "resume_entry",
+            self._route_after_code_or_resume,
+            {"verification": "verification_gate", "end": END},
+        )
         builder.add_edge("verification_gate", "supervisor")
         builder.add_edge("finalization", END)
         return builder.compile()
@@ -609,6 +807,77 @@ class MultiAgentWorkflow:
                 session_id=session_id,
                 task_id=task_id,
             ),
+            config={"recursion_limit": self.recursion_limit},
+        )
+        return cast(TikiState, result)
+
+    def resume(
+        self,
+        checkpoint_id: str,
+        *,
+        expected_revision: int,
+        approval_decision: ApprovalDecision | None = None,
+        recovery_decision: RecoveryDecision | None = None,
+        reconciliation: ReconcileResult | None = None,
+    ) -> TikiState:
+        """加载权威快照，然后通过 START → Resume Entry 重新进入 Graph。"""
+
+        if self.code_agent is None or not getattr(
+            self.code_agent,
+            "supports_resume",
+            False,
+        ):
+            raise RuntimeError("当前工作流没有可恢复 CodeAgent")
+        agent = getattr(self.code_agent, "agent")
+        coordinator = getattr(agent, "execution_coordinator")
+        checkpoint = coordinator.checkpoint_store.load(checkpoint_id)
+        if checkpoint.revision != expected_revision:
+            from tikiagent.harness.checkpoint import CheckpointConflictError
+
+            raise CheckpointConflictError(
+                f"Checkpoint revision 冲突：expected={expected_revision}, "
+                f"actual={checkpoint.revision}"
+            )
+        if checkpoint.scope.workspace_id != self.workspace_id:
+            raise RuntimeError("Checkpoint workspace scope 与当前 Workflow 不匹配")
+
+        # History 通过稳定路径重新连接；不能从 Trace 或 Agent messages 猜历史。
+        history_ref = checkpoint.workflow_snapshot.history
+        restored_history = JsonlHistoryStore(history_ref.path)
+        restored_history.require_cursor(history_ref.cursor)
+        self.history_store = restored_history
+        self._bind_context_services()
+
+        state = restore_tiki_state(checkpoint.workflow_snapshot.state)
+        if (
+            state["task_id"] != checkpoint.scope.task_id
+            or state["session_id"] != checkpoint.scope.session_id
+            or state["workspace_id"] != checkpoint.scope.workspace_id
+        ):
+            raise RuntimeError("Workflow Snapshot 与 Execution Scope 身份不一致")
+        state["resume_request"] = {
+            "checkpoint_id": checkpoint_id,
+            "expected_revision": expected_revision,
+            "approval_decision": (
+                approval_decision.model_dump(mode="json")
+                if approval_decision is not None
+                else None
+            ),
+            "recovery_decision": (
+                recovery_decision.model_dump(mode="json")
+                if recovery_decision is not None
+                else None
+            ),
+            "reconciliation": (
+                reconciliation.model_dump(mode="json")
+                if reconciliation is not None
+                else None
+            ),
+        }
+        state["runtime_checkpoint_id"] = checkpoint_id
+        state["runtime_checkpoint_revision"] = expected_revision
+        result = self.graph.invoke(
+            state,
             config={"recursion_limit": self.recursion_limit},
         )
         return cast(TikiState, result)

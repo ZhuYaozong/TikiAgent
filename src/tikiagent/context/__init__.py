@@ -25,6 +25,7 @@ from tikiagent.context.history import (
     HistoryConflictError,
     HistoryStore,
     InMemoryHistoryStore,
+    JsonlHistoryStore,
 )
 from tikiagent.context.models import (
     BaseContext,
@@ -95,6 +96,7 @@ __all__ = [
     "HistoryRecordType",
     "HistoryStore",
     "InMemoryHistoryStore",
+    "JsonlHistoryStore",
     "InMemoryNotepadStore",
     "LocalCompressor",
     "LocalMemory",

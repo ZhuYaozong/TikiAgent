@@ -11,7 +11,8 @@ from tikiagent.context.models import BaseContext, LocalMemory, WorkingMemory
 from tikiagent.context.runtime import ContextRuntime
 from tikiagent.context.tool_view import ToolExposureGuard
 from tikiagent.harness.dispatcher import Dispatcher
-from tikiagent.harness.models import ToolError, ToolResult
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.models import ExecutionContext, ToolError, ToolResult
 from tikiagent.harness.registry import ToolRegistry
 from tikiagent.llm.models import ModelClient, StructuredModelClient
 from tikiagent.orchestration.models import (
@@ -48,6 +49,7 @@ class ResearchAgent:
         max_searches: int = 2,
         max_extracts: int = 2,
         context_runtime: ContextRuntime | None = None,
+        execution_harness: ExecutionHarness | None = None,
     ) -> None:
         for name, value in {
             "max_steps": max_steps,
@@ -61,6 +63,8 @@ class ResearchAgent:
         self.dispatcher = dispatcher
         self.max_steps = max_steps
         self.context_runtime = context_runtime or ContextRuntime()
+        self.execution_harness = execution_harness
+        self.supports_harness = execution_harness is not None
         self.tool_limits = {
             "web_search": max_searches,
             "web_extract": max_extracts,
@@ -70,6 +74,7 @@ class ResearchAgent:
         self,
         handoff: Handoff,
         base_context: BaseContext | None = None,
+        execution_context: ExecutionContext | None = None,
     ) -> ResearchResult:
         if handoff.to_agent != "research_agent":
             raise ValueError("ResearchAgent 收到了错误目标的 Handoff")
@@ -77,6 +82,8 @@ class ResearchAgent:
             raise ValueError(
                 "ResearchAgent 收到了错误 Profile 的 Base Context"
             )
+        if self.execution_harness is not None and execution_context is None:
+            raise ValueError("正式 ResearchAgent 需要 ExecutionContext")
 
         context = base_context or BaseContext(
             agent="research_agent",
@@ -132,6 +139,8 @@ class ResearchAgent:
                         call.tool_call_id,
                         call.name,
                         call.arguments_json,
+                        execution_context=execution_context,
+                        exposed_tools=prepared.tool_view.exposed_names,
                     )
                 tool_results.append(result)
                 tool_messages.append(
@@ -228,6 +237,9 @@ class ResearchAgent:
         tool_call_id: str,
         name: str,
         arguments_json: str,
+        *,
+        execution_context: ExecutionContext | None,
+        exposed_tools: set[str],
     ) -> ToolResult:
         try:
             arguments = json.loads(arguments_json)
@@ -247,6 +259,26 @@ class ResearchAgent:
             "name": name,
             "arguments": arguments,
         }
+        if self.execution_harness is not None:
+            assert execution_context is not None
+            outcome = self.execution_harness.handle(
+                raw_call,
+                context=execution_context.model_copy(
+                    update={"exposed_tools": exposed_tools}
+                ),
+            )
+            if outcome.status == "awaiting_approval":
+                return ToolResult(
+                    tool_call_id=tool_call_id,
+                    tool_name=name,
+                    ok=False,
+                    error=ToolError(
+                        code="research_approval_unsupported",
+                        message="ResearchAgent v1 只允许无需审批的 Web 工具",
+                    ),
+                )
+            assert outcome.tool_result is not None
+            return outcome.tool_result
         return self.dispatcher.dispatch(raw_call)
 
     def _budget_error(self, tool_call_id: str, name: str) -> ToolResult:

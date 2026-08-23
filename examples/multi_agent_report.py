@@ -9,13 +9,18 @@ from tikiagent.agents import (
     CodeEnvironmentVerifier,
     CommandCheck,
     MultiAgentCodeAgent,
-    ReActAgent,
+    ResumableReActAgent,
     ResearchAgent,
     ResearchResultVerifier,
     SupervisorAgent,
 )
 from tikiagent.harness import (
     Dispatcher,
+    ExecutionCoordinator,
+    ExecutionHarness,
+    FixedCommandPermissionPolicy,
+    JsonCheckpointStore,
+    JsonlTraceStore,
     SearchSettings,
     TavilyProvider,
     Workspace,
@@ -24,7 +29,8 @@ from tikiagent.harness import (
     build_web_registry,
     register_command_tool,
 )
-from tikiagent.context import BaseContext
+from tikiagent.context import BaseContext, JsonlHistoryStore
+from tikiagent.harness import ExecutionContext
 from tikiagent.llm import ModelSettings, OpenAICompatibleClient
 from tikiagent.orchestration import (
     Handoff,
@@ -73,22 +79,30 @@ class LazyResearchAgent:
     def __init__(self, model: OpenAICompatibleClient) -> None:
         self.model = model
         self.agent: ResearchAgent | None = None
+        self.supports_harness = True
 
     def run(
         self,
         handoff: Handoff,
         base_context: BaseContext,
+        execution_context: ExecutionContext | None = None,
     ) -> ResearchResult:
         if self.agent is None:
             registry = build_web_registry(
                 TavilyProvider(SearchSettings.from_env())
             )
+            dispatcher = Dispatcher(registry)
             self.agent = ResearchAgent(
                 model=self.model,
                 structured_model=self.model,
-                dispatcher=Dispatcher(registry),
+                dispatcher=dispatcher,
+                execution_harness=ExecutionHarness(dispatcher),
             )
-        return self.agent.run(handoff, base_context)
+        return self.agent.run(
+            handoff,
+            base_context,
+            execution_context=execution_context,
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -110,22 +124,39 @@ def main() -> None:
 
     code_registry = build_file_registry(workspace)
     register_command_tool(code_registry, workspace)
+    code_dispatcher = Dispatcher(code_registry)
+    checkpoint_store = JsonCheckpointStore(Path(".tiki") / "checkpoints")
+    trace_store = JsonlTraceStore(Path(".tiki") / "events.jsonl")
     code_agent = MultiAgentCodeAgent(
-        ReActAgent(
+        ResumableReActAgent(
             model=model,
-            dispatcher=Dispatcher(code_registry),
+            dispatcher=code_dispatcher,
             system_prompt=CODE_SYSTEM_PROMPT,
             max_steps=12,
+            execution_coordinator=ExecutionCoordinator(
+                ExecutionHarness(code_dispatcher),
+                checkpoint_store,
+                trace_store,
+            ),
         )
     )
 
     # Gate 的 Code 策略只能读取文件；命令内容由应用固定，不由模型生成。
     verifier_registry = build_read_only_file_registry(workspace)
     register_command_tool(verifier_registry, workspace)
+    verifier_dispatcher = Dispatcher(verifier_registry)
     gate = VerificationGate(
         research_verifier=ResearchResultVerifier(min_sources=1),
         code_verifier=CodeEnvironmentVerifier(
-            dispatcher=Dispatcher(verifier_registry),
+            dispatcher=verifier_dispatcher,
+            execution_harness=ExecutionHarness(
+                verifier_dispatcher,
+                permission_policy=FixedCommandPermissionPolicy(
+                    allowed_commands={
+                        (sys.executable, "-B", "-c", HTML_CHECK)
+                    }
+                ),
+            ),
             checks=(
                 CommandCheck(
                     name="html-structure",
@@ -142,6 +173,7 @@ def main() -> None:
         verification_gate=gate,
         workspace_id="multi-agent-demo",
         max_delegations=5,
+        history_store=JsonlHistoryStore(Path(".tiki") / "history.jsonl"),
     )
 
     final_state: TikiState | None = None
