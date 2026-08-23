@@ -1,6 +1,6 @@
 """工具注册表。"""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,9 +31,13 @@ class ToolRegistry:
     def get(self, name: str) -> RegisteredTool | None:
         return self._tools.get(name)
 
-    def schemas(self) -> list[dict[str, Any]]:
+    def schemas(
+        self,
+        names: Iterable[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """返回内部 Schema，由 ModelClient 转换成供应商协议。"""
 
+        selected = None if names is None else set(names)
         return [
             {
                 "name": tool.name,
@@ -41,4 +45,10 @@ class ToolRegistry:
                 "parameters": tool.args_model.model_json_schema(),
             }
             for tool in self._tools.values()
+            if selected is None or tool.name in selected
         ]
+
+    def names(self) -> set[str]:
+        """返回 Registry 当前真实存在的工具名称。"""
+
+        return set(self._tools)

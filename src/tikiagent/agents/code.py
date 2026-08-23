@@ -72,9 +72,11 @@ class MultiAgentCodeAgent:
 
         # ReActAgent.run() 会为本次执行创建局部 messages；Base Context 只作为
         # 本轮初始输入，不接收其他 Agent 的内部 messages。
-        task = base_context.render()
         try:
-            run_result = self.agent.run(task)
+            run_result = self.agent.run(
+                base_context.render(),
+                base_context=base_context,
+            )
         except MaxStepsExceeded as error:
             return CodeResult(
                 handoff_id=handoff.handoff_id,

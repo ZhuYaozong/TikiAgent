@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from tikiagent.agents import MaxStepsExceeded, ReActAgent
+from tikiagent.context import BaseContext, WorkingMemory
 from tikiagent.harness import (
     Dispatcher,
     Workspace,
@@ -209,3 +210,57 @@ def test_agent_repairs_code_and_verifies_with_real_process(
     assert result.tool_results[2].output["exit_code"] == 0
     baseline_observation = json.loads(model.requests[1][-1]["content"])
     assert baseline_observation["output"]["exit_code"] == 1
+    assert result.phases[0] == "execute"
+    assert "debugging" in result.phases[1:]
+
+
+def test_new_agent_run_does_not_inherit_previous_local_memory(tmp_path: Path) -> None:
+    model = ScriptedModel(
+        [
+            tool_response("call_read", "read_file", {"path": "note.txt"}),
+            final_response("first done"),
+            final_response("second done"),
+        ]
+    )
+    workspace, agent = build_agent(tmp_path, model)
+    workspace.resolve("note.txt").write_text("content", encoding="utf-8")
+
+    agent.run("first delegation")
+    agent.run("second delegation")
+
+    second_run_first_call = model.requests[2]
+    assert [message["role"] for message in second_run_first_call] == [
+        "system",
+        "user",
+    ]
+
+
+def test_registered_but_unexposed_tool_returns_structured_error(
+    tmp_path: Path,
+) -> None:
+    model = ScriptedModel(
+        [
+            tool_response(
+                "call_write",
+                "write_file",
+                {"path": "new.txt", "content": "blocked"},
+            ),
+            final_response("tool rejected"),
+        ]
+    )
+    workspace, agent = build_agent(tmp_path, model)
+    context = BaseContext(
+        agent="code_agent",
+        working_memory=WorkingMemory(
+            task="debug",
+            phase="debugging",
+            instruction="debug only",
+        ),
+    )
+
+    result = agent.run("debug", base_context=context)
+
+    assert result.tool_results[0].ok is False
+    assert result.tool_results[0].error is not None
+    assert result.tool_results[0].error.code == "tool_not_exposed"
+    assert not workspace.resolve("new.txt").exists()

@@ -198,7 +198,11 @@ def test_hybrid_passes_gate_after_each_specialist() -> None:
         "handoff",
         "result",
         "verification",
+        "result",
     ]
+    assert history[-1].record_id == state["final_result_id"]
+    assert state["finalization_report"] is not None
+    assert state["finalization_report"].already_finalized is False
     assert state["history_cursor"] == len(history)
     assert all(
         item.status == "completed"
@@ -223,11 +227,25 @@ def test_failed_code_result_retries_and_only_latest_pass_finishes() -> None:
     assert report.result_id == "code-2"
     assert report.passed is True
     retry_history = code.contexts[1].working_memory.relevant_history
+    assert code.contexts[0].working_memory.phase == "coding"
+    assert code.contexts[1].working_memory.phase == "debugging"
     assert "code-1" in {item.record_id for item in retry_history}
     assert any(item.record_type == "verification" for item in retry_history)
     todo = next(iter(state["task_board"].items.values()))
     assert todo.attempts == 2
     assert todo.status == "completed"
+
+
+def test_finalization_node_replay_does_not_duplicate_final_result() -> None:
+    value, _, _, _, _ = workflow(["code_agent"])
+    state = value.invoke("coding")
+    history_size = len(value.history_for(state))
+    replay_state = {**state, "status": "finalizing"}
+
+    updates = value._finalization_node(replay_state)
+
+    assert updates["finalization_report"].already_finalized is True
+    assert len(value.history_for(state)) == history_size
 
 
 def test_failed_research_result_receives_latest_verification_on_retry() -> None:
@@ -363,3 +381,5 @@ def test_graph_rejects_early_finish_from_replaced_supervisor() -> None:
     assert state["status"] == "stopped"
     assert research.calls == 0
     assert "拒绝 FINISH" in state["final_result"]
+    assert state["finalization_report"] is None
+    assert value.history_for(state) == []

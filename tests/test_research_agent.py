@@ -98,8 +98,6 @@ def handoff() -> Handoff:
 def base_context() -> BaseContext:
     return BaseContext(
         agent="research_agent",
-        role="research",
-        system_rules=["keep sources"],
         working_memory=WorkingMemory(
             task="research framework",
             phase="research",

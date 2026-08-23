@@ -87,7 +87,9 @@ def test_actor_max_steps_becomes_structured_result() -> None:
 class SuccessfulMultiAgent:
     max_steps = 6
 
-    def run(self, task: str) -> AgentRunResult:
+    def run(self, task: str, *, base_context=None) -> AgentRunResult:
+        assert base_context is not None
+        assert base_context.agent == "code_agent"
         assert "research summary" in task
         return AgentRunResult(
             final_text="网页完成",
@@ -125,8 +127,6 @@ def test_multi_agent_code_result_links_handoff_without_messages() -> None:
     )
     base_context = BaseContext(
         agent="code_agent",
-        role="code",
-        system_rules=["只执行当前 Todo"],
         working_memory=WorkingMemory(
             task="create report",
             phase="coding",

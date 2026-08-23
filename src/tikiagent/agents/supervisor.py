@@ -3,7 +3,9 @@
 import json
 from typing import cast
 
-from tikiagent.context.models import BaseContext
+from tikiagent.context.models import BaseContext, LocalMemory, WorkingMemory
+from tikiagent.context.runtime import ContextRuntime
+from tikiagent.harness.registry import ToolRegistry
 from tikiagent.context.task_board import next_actionable_todo
 from tikiagent.llm.models import StructuredModelClient
 from tikiagent.orchestration.models import (
@@ -53,25 +55,35 @@ def next_required_specialist(
 class SupervisorAgent:
     """模型负责语义规划，程序负责不可绕过的控制流契约。"""
 
-    def __init__(self, model: StructuredModelClient) -> None:
+    def __init__(
+        self,
+        model: StructuredModelClient,
+        context_runtime: ContextRuntime | None = None,
+    ) -> None:
         self.model = model
+        self.context_runtime = context_runtime or ContextRuntime()
 
     def plan(self, task: str) -> SupervisorPlan:
+        context = BaseContext(
+            agent="supervisor",
+            working_memory=WorkingMemory(
+                task=task,
+                phase="planning",
+                instruction=(
+                    "判断需要哪些 Specialist，并生成可验证的验收标准。"
+                ),
+            ),
+        )
+        prepared = self.context_runtime.prepare(
+            base_context=context,
+            local_memory=LocalMemory(),
+            registry=ToolRegistry(),
+            response_type=SupervisorPlan,
+        )
         plan = cast(
             SupervisorPlan,
             self.model.complete_structured(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "你是 TikiAgent Supervisor。判断任务需要"
-                            " research_agent、code_agent 或两者。需要当前"
-                            "外部信息时先 research 后 code。生成可验证的"
-                            "验收标准，不调用工具。"
-                        ),
-                    },
-                    {"role": "user", "content": task},
-                ],
+                messages=prepared.messages,
                 response_type=SupervisorPlan,
             ),
         )
@@ -101,27 +113,39 @@ class SupervisorAgent:
                 reason="需要继续委派，但已达到 max_delegations",
             )
 
+        decision_context = base_context or BaseContext(
+            agent="supervisor",
+            working_memory=WorkingMemory(
+                task=state["task"],
+                phase="routing",
+                instruction=self._decision_context(state),
+                acceptance_criteria=state["acceptance_criteria"],
+                todos=list(state["task_board"].items.values()),
+            ),
+        )
+        decision_context = decision_context.model_copy(
+            update={
+                "working_memory": decision_context.working_memory.model_copy(
+                    update={
+                        "instruction": (
+                            f"{decision_context.working_memory.instruction}\n"
+                            f"程序已确定下一目标必须是 {target}，"
+                            "action 必须是 delegate。"
+                        )
+                    }
+                )
+            }
+        )
+        prepared = self.context_runtime.prepare(
+            base_context=decision_context,
+            local_memory=LocalMemory(),
+            registry=ToolRegistry(),
+            response_type=SupervisorDecision,
+        )
         decision = cast(
             SupervisorDecision,
             self.model.complete_structured(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "你是 TikiAgent Supervisor，只生成下一次委派"
-                            "指令，不直接搜索、写文件或验证。系统已经确定"
-                            f"下一目标必须是 {target}，action 必须是 delegate。"
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            base_context.render()
-                            if base_context is not None
-                            else self._decision_context(state)
-                        ),
-                    },
-                ],
+                messages=prepared.messages,
                 response_type=SupervisorDecision,
             ),
         )
