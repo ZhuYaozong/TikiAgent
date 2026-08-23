@@ -2,7 +2,7 @@
 
 TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。它使用 Supervisor 根据任务动态调度 ResearchAgent 和 CodeAgent，通过统一 Verification Gate 验证每次 Specialist 交付，再由 Supervisor 决定继续委派或结束。Context Engine 根据当前 Agent、任务阶段和显式引用重新构建 Base Context，避免 Specialist 直接继承全部历史。
 
-当前版本为 **v0.6.0a1 Harness Gate / Enforce / Isolate**。
+当前版本为 **v0.6.0a2 Harness Persist / Observe**。
 
 ## v0.5 Context-aware Multi-Agent 架构
 
@@ -166,6 +166,8 @@ pip install / uv add / git commit → ASK
 未分类命令                         → DENY
 ```
 
+Verifier 的固定环境检查使用 `FixedCommandPermissionPolicy`，只有与应用预配置 tuple 完全一致的 argv 才 ALLOW；这不会扩大模型可自由生成的命令范围。
+
 `HarnessOutcome.status` 是唯一状态来源：
 
 ```text
@@ -195,7 +197,7 @@ ASK 产生的是 Harness Runtime 中的待执行状态，不是 LocalMemory Obse
 → 不进入 LocalMemory
 ```
 
-`Dispatcher.dispatch()` 为 v0.1～v0.5 Baseline 暂时保留，但它只是 legacy/internal compatibility API，会绕过 Exposure、Permission 和 Approval。新正式 Agent 执行路径最终只能经过 `ExecutionHarness`。
+`Dispatcher.dispatch()` 为 v0.1～v0.5 Baseline 暂时保留，但它只是 legacy/internal compatibility API，会绕过 Exposure、Permission 和 Approval。v0.6a2 正式 Multi-Agent 示例使用 `ResumableReActAgent`，ResearchAgent 和 Verifier 也显式注入 `ExecutionHarness`；新的正式执行路径不应再调用该兼容入口。
 
 当前真实边界是：
 
@@ -205,14 +207,101 @@ v0.6a1
 ≠ 所有 Agent 已强制经过 Permission
 
 v0.6a2
-= Checkpoint / Resume / Trace
-+ Agent Runtime 接入后成为唯一正式执行路径
+= Checkpoint / Resume / Trace 已接入
++ Resumable Agent Runtime 成为正式执行路径
 ```
 
 离线演示不会安装真实依赖：
 
 ```powershell
 uv run --locked python examples/harness_security.py
+```
+
+## v0.6a2 Persist / Observe
+
+Checkpoint 是恢复事实的唯一权威来源，Trace 只用于审计和可观测性：
+
+```text
+Checkpoint = resume source of truth
+Trace      = audit / observability only
+History    = 可供未来 Agent 重新检索的任务信息
+```
+
+ASK 的持久化顺序被冻结为：
+
+```text
+ASK
+→ save checkpoint(awaiting_approval)
+→ 进程可以安全退出
+
+Approval PASS
+→ validate scope + fingerprint
+→ save checkpoint(executing)
+→ consume approval
+→ Trace(tool_execution_started)
+→ handler()
+→ save checkpoint(completed + real ToolResult)
+→ Trace(tool_execution_finished)
+```
+
+审批“已批准”和执行“已完成”是两个不同事实。`before_execute()` 保存 `executing` 失败时，handler 不会启动，Approval 也不会被提前消费。`HarnessOutcome.status=completed` 只表示 Harness 生命周期结束；`ToolResult.ok` 和命令 `exit_code` 仍分别表示协议结果与业务结果。
+
+一个原子 Checkpoint 同时保存：
+
+```text
+ExecutionCheckpoint
+├── ExecutionIdentity
+│   ├── run_id
+│   ├── execution_id
+│   ├── tool_call_id
+│   └── attempt
+├── WorkflowResumeSnapshot
+│   ├── canonical TikiState
+│   └── HistoryResumeReference(path + cursor)
+└── ReActRunSnapshot
+    ├── BaseContext
+    ├── LocalMemory
+    ├── ordered pending ToolCalls
+    ├── completed ToolResults
+    └── next_tool_index
+```
+
+多 ToolCall 严格按模型返回顺序执行。遇到 ASK 时，只保存已经完成的前缀和下一个位置；在全部 ToolCall 都取得真实 ToolResult 之前，不会形成 `ReActInteraction`，因此 LocalMemory 中不存在孤立 ToolCall。
+
+Resume 不在 Graph 外直接调用 Specialist 后手工跳节点：
+
+```text
+load checkpoint
+→ restore JSONL History
+→ restore TikiState
+→ Graph START
+→ Resume Entry Router
+→ resume_entry Node
+→ CodeAgent / Verification / Supervisor
+```
+
+`revision` 使用 compare-and-swap 语义防止同一 Checkpoint 被重复 Resume。新进程发现 `executing` 时进入 `recovery_required`，禁止自动重放未知副作用：
+
+```text
+confirmed_not_executed
+→ 新 execution_id / attempt
+→ 重新走 Gate；ASK 重新审批
+
+confirmed_executed
+→ awaiting_reconcile
+→ 禁止自动继续
+→ 人工提供真实 ToolResult + evidence
+→ completed(manually_reconciled)
+```
+
+`confirmed_executed` 不会伪造成功 ToolResult。没有 `ReconcileResult` 时，Graph 保持暂停。
+
+Checkpoint 使用临时文件、`fsync` 和 `os.replace` 原子替换，并用 SHA-256 发现意外损坏；SHA-256 不是防攻击签名。Trace 使用带 `sequence` 的 JSONL，限制长文本并按字段名脱敏 Secret。正式系统仍不应把 API Key、Authorization 或密码明文写入 Checkpoint，应该保存 Secret reference。
+
+完全离线的持久化演示：
+
+```powershell
+uv run --locked python examples/harness_resume.py
 ```
 
 ## Result 与 Verification 身份链
@@ -369,6 +458,9 @@ Collaboration / Verification
 Runtime / Completion
 ├── workspace_id
 ├── history_cursor
+├── runtime_checkpoint_id / revision
+├── resume_request
+├── trace_cursor
 ├── status
 ├── final_result
 ├── final_result_id
@@ -381,7 +473,8 @@ Runtime / Completion
 - `HistoryStore` 保留每次 Handoff、Result 和 Verification，旧尝试不会被最新状态覆盖；
 - `history_cursor` 只是外部 History 的位置引用，不把 History 复制回 State；
 - `recent_handoffs` 已从 State 移除；
-- `recent_events` 仍最多保留 50 条，将在 Harness Engineering 阶段迁移到 Trace。
+- `recent_events` 仍是最多 50 条的应用展示缓存；工具执行审计已经写入持久化 Trace，Resume 从不依赖两者推断状态；
+- `runtime_checkpoint_id` 避开 LangGraph 保留字段名 `checkpoint_id`，仅保存外部 Checkpoint 引用。
 
 ```text
 State = 系统现在是什么状态
@@ -512,6 +605,7 @@ src/tikiagent/
 │   ├── code.py
 │   ├── planner.py
 │   ├── react.py
+│   ├── resumable.py
 │   ├── research.py
 │   ├── supervisor.py
 │   └── verifier.py
@@ -524,14 +618,18 @@ src/tikiagent/
 │   └── task_board.py
 ├── harness/
 │   ├── approval.py
+│   ├── checkpoint.py
 │   ├── command_tools.py
+│   ├── coordinator.py
 │   ├── dispatcher.py
 │   ├── execution.py
 │   ├── file_tools.py
 │   ├── guards.py
 │   ├── models.py
 │   ├── permission.py
+│   ├── recovery.py
 │   ├── registry.py
+│   ├── trace.py
 │   ├── web_tools.py
 │   └── workspace.py
 ├── llm/
@@ -573,6 +671,13 @@ src/tikiagent/
 - ASK 不产生 ToolResult，也不能形成不完整 ReActInteraction；
 - 结构化 argv 的测试命令、环境变更和未分类命令策略；
 - `before_execute` 严格位于 Approval PASS 与 handler 之间；
+- Checkpoint 同时保存 Workflow 与 ReAct 两层快照，并用 checksum 校验；
+- CAS revision 拒绝重复 Resume，Trace 使用独立 sequence；
+- 新进程经 Resume Entry Router 重入 Graph，而不是在 Graph 外续跑；
+- JSONL History 在新进程中恢复记录、cursor 和幂等身份；
+- 多 ToolCall 在中途 ASK 后按原顺序继续，并在完整配对后写 LocalMemory；
+- `executing` 崩溃进入 `recovery_required`，不会自动重放；
+- `confirmed_executed` 在人工提供真实 ReconcileResult 前保持阻塞；
 - Notepad 审批、作用域过滤、幂等写入和 Markdown 重载；
 - FINISH Guard 后 Finalization 以及节点重放幂等性；
 - History Store 幂等写入、作用域和冲突检查；
@@ -587,10 +692,12 @@ src/tikiagent/
 ## 当前限制
 
 - Command Runtime 的 Workspace `cwd` 限制不是操作系统 Sandbox，子进程仍可能主动访问 Workspace 外资源；
-- v0.6a1 已实现 Permission 与进程内 Approval；Checkpoint、Resume 和正式 Trace 将在 v0.6a2 实现；
-- `InMemoryApprovalLedger` 不跨进程，不能代替 v0.6a2 的权威 Checkpoint；
-- 现有 Agent Loop 仍使用 legacy Dispatcher；v0.6a2 完成 Runtime/Resume 接入后才强制使用 ExecutionHarness；
-- `InMemoryHistoryStore` 在进程退出后不保留数据，持久化后端将在后续阶段实现；
+- `InMemoryApprovalLedger` 仍只负责当前进程校验；跨进程执行事实以 Checkpoint 为准；
+- v0.1～v0.5 Baseline 仍保留 legacy Dispatcher，正式 Multi-Agent 示例使用 Harness Runtime；
+- `InMemoryHistoryStore` 仍可用于短测试；需要 Resume 的 Workflow 强制使用 `JsonlHistoryStore`；
+- JSONL Checkpoint/History 适合单机 v1，不提供多进程文件锁或分布式 exactly-once；
+- Trace 是 best effort，崩溃前最后几条事件可能缺失，但不会改变 Checkpoint 恢复语义；
+- `recent_events` 仍是内存中的 UI 展示缓存，后续 Application Event Stream 会统一消费 Trace；
 - 默认 `InMemoryNotepadStore` 不跨进程；应用可以显式使用 `.tiki/NOTEPAD.md` 的 `MarkdownNotepadStore`；
 - 当前 Token 统计是字符近似值，不是供应商精确 Tokenizer；
 - 当前 Compressor 是确定性规则实现，尚未实现 LLM Structured Summary；
@@ -609,7 +716,7 @@ src/tikiagent/
 - [x] v0.5 Context I：History、Retriever、Task Board、Context Profiles、Context Builder；
 - [x] v0.5 Context II：Monitor、Compressor、Notepad、动态 Prompt/Tool、Finalization；
 - [x] v0.6a1 Gate / Enforce / Isolate：Permission、Approval 与安全执行管线；
-- [ ] v0.6a2 Persist / Observe：Checkpoint、Resume、Trace 与 Agent Runtime 接入；
+- [x] v0.6a2 Persist / Observe：双快照 Checkpoint、Graph Resume、Trace、持久化 History 与 Agent Runtime；
 - [ ] Session、CLI、Event Stream 与 Evaluation；
 - [ ] Single-Agent / Plan-Verify / Multi-Agent / Context Engine 消融实验。
 

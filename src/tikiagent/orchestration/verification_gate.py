@@ -9,6 +9,7 @@ from tikiagent.orchestration.models import (
     VerificationCheck,
     VerificationReport,
 )
+from tikiagent.harness.models import ExecutionContext
 
 
 class SpecialistVerifier(Protocol):
@@ -34,6 +35,10 @@ class VerificationGate:
             "research_agent": research_verifier,
             "code_agent": code_verifier,
         }
+        self.supports_harness = any(
+            getattr(verifier, "supports_harness", False)
+            for verifier in self.verifiers.values()
+        )
 
     def verify(
         self,
@@ -41,6 +46,7 @@ class VerificationGate:
         handoff: Handoff,
         raw_result: dict[str, Any],
         specialist_results: dict[str, dict[str, Any]],
+        execution_context: ExecutionContext | None = None,
     ) -> VerificationReport:
         result_type = (
             ResearchResult
@@ -81,11 +87,20 @@ class VerificationGate:
                 ),
             )
 
-        report = self.verifiers[handoff.to_agent].verify(
-            handoff=handoff,
-            result=result,
-            specialist_results=specialist_results,
-        )
+        verifier = self.verifiers[handoff.to_agent]
+        if getattr(verifier, "supports_harness", False):
+            report = verifier.verify(
+                handoff=handoff,
+                result=result,
+                specialist_results=specialist_results,
+                execution_context=execution_context,
+            )
+        else:
+            report = verifier.verify(
+                handoff=handoff,
+                result=result,
+                specialist_results=specialist_results,
+            )
         if (
             report.result_id != result.result_id
             or report.handoff_id != handoff.handoff_id

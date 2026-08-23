@@ -97,6 +97,47 @@ class RuleBasedPermissionPolicy:
         )
 
 
+class FixedCommandPermissionPolicy:
+    """Verifier 等应用节点只允许预先配置的精确 argv。"""
+
+    def __init__(
+        self,
+        *,
+        allowed_commands: Collection[tuple[str, ...]],
+        allowed_tools: Collection[str] = ("read_file", "list_files", "grep"),
+    ) -> None:
+        if not allowed_commands:
+            raise ValueError("FixedCommandPermissionPolicy 至少需要一条 argv")
+        self.allowed_commands = frozenset(allowed_commands)
+        self.allowed_tools = frozenset(allowed_tools)
+
+    def decide(
+        self,
+        tool_call: ValidatedToolCall,
+        context: ExecutionContext,
+    ) -> PermissionDecision:
+        del context
+        if tool_call.name in self.allowed_tools:
+            return PermissionDecision(
+                action="ALLOW",
+                rule_id=f"verifier.{tool_call.name}.allow",
+                reason="Verifier 只读工具在应用 allowlist 中",
+            )
+        command = tool_call.arguments.get("command")
+        if tool_call.name == "run_command" and isinstance(command, list):
+            if tuple(command) in self.allowed_commands:
+                return PermissionDecision(
+                    action="ALLOW",
+                    rule_id="verifier.fixed-command.allow",
+                    reason="argv 与应用预配置验证命令完全一致",
+                )
+        return PermissionDecision(
+            action="DENY",
+            rule_id="verifier.unconfigured.deny",
+            reason="Verifier 拒绝未预配置的工具或 argv",
+        )
+
+
 def _executable_name(value: str) -> str:
     """同时兼容 Windows 与 POSIX 风格的完整可执行文件路径。"""
 

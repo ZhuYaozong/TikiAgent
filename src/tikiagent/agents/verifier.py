@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from tikiagent.harness.dispatcher import Dispatcher
-from tikiagent.harness.models import CommandResult
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.models import CommandResult, ExecutionContext, ToolResult
 from tikiagent.orchestration.models import (
     ActorResult,
     CodeResult,
@@ -33,11 +34,14 @@ class EnvironmentVerifier:
         self,
         dispatcher: Dispatcher,
         checks: tuple[CommandCheck, ...],
+        execution_harness: ExecutionHarness | None = None,
     ) -> None:
         if not checks:
             raise ValueError("Verifier 至少需要一个环境检查")
         self.dispatcher = dispatcher
         self.checks = checks
+        self.execution_harness = execution_harness
+        self.supports_harness = execution_harness is not None
 
     def verify(
         self,
@@ -66,11 +70,14 @@ class EnvironmentVerifier:
             ),
         )
 
-    def run_checks(self) -> list[VerificationCheck]:
+    def run_checks(
+        self,
+        execution_context: ExecutionContext | None = None,
+    ) -> list[VerificationCheck]:
         """运行应用固定的环境检查，供 Verification Gate 复用。"""
 
         return [
-            self._run_check(index, check)
+            self._run_check(index, check, execution_context)
             for index, check in enumerate(self.checks, start=1)
         ]
 
@@ -78,9 +85,9 @@ class EnvironmentVerifier:
         self,
         index: int,
         check: CommandCheck,
+        execution_context: ExecutionContext | None,
     ) -> VerificationCheck:
-        result = self.dispatcher.dispatch(
-            {
+        raw_call = {
                 "tool_call_id": f"verify_{index}",
                 "name": "run_command",
                 "arguments": {
@@ -89,7 +96,7 @@ class EnvironmentVerifier:
                     "timeout_seconds": check.timeout_seconds,
                 },
             }
-        )
+        result = self._execute(raw_call, execution_context, {"run_command"})
         if not result.ok:
             return VerificationCheck(
                 name=check.name,
@@ -115,6 +122,27 @@ class EnvironmentVerifier:
             passed=passed,
             evidence=self._format_evidence(command_result),
         )
+
+    def _execute(
+        self,
+        raw_call: dict[str, Any],
+        execution_context: ExecutionContext | None,
+        exposed_tools: set[str],
+    ) -> ToolResult:
+        if self.execution_harness is None:
+            return self.dispatcher.dispatch(raw_call)
+        if execution_context is None:
+            raise ValueError("正式 Verifier 需要 ExecutionContext")
+        outcome = self.execution_harness.handle(
+            raw_call,
+            context=execution_context.model_copy(
+                update={"exposed_tools": exposed_tools}
+            ),
+        )
+        if outcome.status == "awaiting_approval":
+            raise RuntimeError("Verifier 只允许无需审批的只读检查")
+        assert outcome.tool_result is not None
+        return outcome.tool_result
 
     @staticmethod
     def _format_evidence(result: CommandResult) -> str:
@@ -209,11 +237,17 @@ class CodeEnvironmentVerifier:
         dispatcher: Dispatcher,
         checks: tuple[CommandCheck, ...],
         expected_files: tuple[str, ...],
+        execution_harness: ExecutionHarness | None = None,
     ) -> None:
         if not expected_files:
             raise ValueError("Code Verifier 至少需要一个目标文件")
         self.dispatcher = dispatcher
-        self.environment = EnvironmentVerifier(dispatcher, checks)
+        self.environment = EnvironmentVerifier(
+            dispatcher,
+            checks,
+            execution_harness=execution_harness,
+        )
+        self.supports_harness = execution_harness is not None
         self.expected_files = expected_files
 
     def verify(
@@ -222,6 +256,7 @@ class CodeEnvironmentVerifier:
         handoff: Handoff,
         result: CodeResult,
         specialist_results: dict[str, dict[str, Any]],
+        execution_context: ExecutionContext | None = None,
     ) -> VerificationReport:
         checks = [
             VerificationCheck(
@@ -247,12 +282,14 @@ class CodeEnvironmentVerifier:
                     f"expected={list(self.expected_files)}"
                 ),
             ),
-            *self.environment.run_checks(),
+            *self.environment.run_checks(execution_context),
         ]
         raw_research = specialist_results.get("research_agent")
         if raw_research is not None:
             research = ResearchResult.model_validate(raw_research)
-            checks.append(self._source_reference_check(research))
+            checks.append(
+                self._source_reference_check(research, execution_context)
+            )
         return _linked_report(
             handoff=handoff,
             result_id=result.result_id,
@@ -264,16 +301,19 @@ class CodeEnvironmentVerifier:
     def _source_reference_check(
         self,
         research: ResearchResult,
+        execution_context: ExecutionContext | None,
     ) -> VerificationCheck:
         contents: list[str] = []
         read_errors: list[str] = []
         for index, path in enumerate(self.expected_files, start=1):
-            result = self.dispatcher.dispatch(
+            result = self.environment._execute(
                 {
                     "tool_call_id": f"verify_source_{index}",
                     "name": "read_file",
                     "arguments": {"path": path},
-                }
+                },
+                execution_context,
+                {"read_file"},
             )
             if result.ok and isinstance(result.output, dict):
                 contents.append(str(result.output.get("content", "")))

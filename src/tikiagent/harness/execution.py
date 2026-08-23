@@ -98,7 +98,7 @@ class ExecutionHarness:
                     code="approval_state_incomplete",
                     message="恢复 ASK 时必须同时提供 ApprovalRequest 和 Decision",
                 )
-            approval_error = self.approval_gate.authorize(
+            approval_error = self.approval_gate.validate_decision(
                 request=approval_request,
                 decision=approval_decision,
                 current_call=prepared,
@@ -114,6 +114,14 @@ class ExecutionHarness:
                         error=approval_error,
                     ),
                 )
+            if not approval_decision.approved:
+                self.approval_gate.mark_resolved(approval_request.request_id)
+                return self._denied(
+                    tool_call_id=prepared.tool_call_id,
+                    tool_name=prepared.name,
+                    code="approval_rejected",
+                    message="外部审批拒绝了工具执行",
+                )
         elif approval_request is not None or approval_decision is not None:
             return self._denied(
                 tool_call_id=prepared.tool_call_id,
@@ -125,6 +133,9 @@ class ExecutionHarness:
         # v0.6a2 将在此先持久化 executing，再允许 handler 启动。
         if before_execute is not None:
             before_execute(prepared)
+        if approval_request is not None:
+            # before_execute 成功持久化 executing 后，才能消费批准。
+            self.approval_gate.mark_resolved(approval_request.request_id)
         return HarnessOutcome(
             status="completed",
             tool_result=self.dispatcher.execute(prepared),

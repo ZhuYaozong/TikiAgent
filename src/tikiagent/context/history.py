@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import os
+from pathlib import Path
 from threading import RLock
 from typing import Protocol
 
@@ -148,3 +150,108 @@ class InMemoryHistoryStore:
         session_id: str,
     ) -> Iterable[HistoryRecord]:
         return self.list_records(task_id=task_id, session_id=session_id)
+
+
+class JsonlHistoryStore:
+    """可跨进程重建的 JSONL History；Trace 不参与重建。"""
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path).resolve()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._memory = InMemoryHistoryStore()
+        self._lock = RLock()
+        self._load_existing()
+
+    def append(self, record: HistoryRecord) -> HistoryRecord:
+        """先持久化再发布到内存视图，保持进程内外一致。"""
+
+        with self._lock:
+            existing = self._memory.get_by_id(record.record_id)
+            if existing is not None:
+                normalized = record.model_copy(update={"sequence": existing.sequence})
+                if normalized == existing:
+                    return existing
+                raise HistoryConflictError(
+                    f"History record_id 冲突：{record.record_id}"
+                )
+            stored = record.model_copy(
+                update={"sequence": self._memory.cursor() + 1}
+            )
+            with self.path.open("a", encoding="utf-8", newline="\n") as stream:
+                stream.write(stored.model_dump_json() + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            return self._memory.append(stored)
+
+    def get_by_id(self, record_id: str) -> HistoryRecord | None:
+        return self._memory.get_by_id(record_id)
+
+    def search_keyword(
+        self,
+        *,
+        task_id: str,
+        session_id: str,
+        keywords: list[str],
+        record_types: set[HistoryRecordType],
+        limit: int,
+    ) -> list[HistoryRecord]:
+        return self._memory.search_keyword(
+            task_id=task_id,
+            session_id=session_id,
+            keywords=keywords,
+            record_types=record_types,
+            limit=limit,
+        )
+
+    def recent(
+        self,
+        *,
+        task_id: str,
+        session_id: str,
+        record_types: set[HistoryRecordType],
+        limit: int,
+    ) -> list[HistoryRecord]:
+        return self._memory.recent(
+            task_id=task_id,
+            session_id=session_id,
+            record_types=record_types,
+            limit=limit,
+        )
+
+    def list_records(
+        self,
+        *,
+        task_id: str | None = None,
+        session_id: str | None = None,
+    ) -> list[HistoryRecord]:
+        return self._memory.list_records(
+            task_id=task_id,
+            session_id=session_id,
+        )
+
+    def cursor(self) -> int:
+        return self._memory.cursor()
+
+    def require_cursor(self, minimum_cursor: int) -> None:
+        """恢复时确认 History 至少包含 Checkpoint 已观察到的记录。"""
+
+        if self.cursor() < minimum_cursor:
+            raise HistoryConflictError(
+                f"History cursor 落后：required={minimum_cursor}, "
+                f"actual={self.cursor()}"
+            )
+
+    def _load_existing(self) -> None:
+        if not self.path.exists():
+            return
+        expected_sequence = 0
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            expected_sequence += 1
+            record = HistoryRecord.model_validate_json(line)
+            if record.sequence != expected_sequence:
+                raise HistoryConflictError(
+                    "History JSONL sequence 不连续，拒绝猜测恢复状态"
+                )
+            self._memory.append(record)

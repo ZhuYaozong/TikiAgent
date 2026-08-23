@@ -7,6 +7,7 @@ import pytest
 from tikiagent.harness import (
     ExecutionContext,
     ExecutionScope,
+    FixedCommandPermissionPolicy,
     RuleBasedPermissionPolicy,
     ValidatedToolCall,
 )
@@ -96,3 +97,14 @@ def test_unclassified_tool_is_denied() -> None:
     )
 
     assert decision.action == "DENY"
+
+
+def test_verifier_only_allows_exact_preconfigured_argv() -> None:
+    configured = (sys.executable, "-B", "-c", "print('verify')")
+    policy = FixedCommandPermissionPolicy(allowed_commands={configured})
+
+    assert policy.decide(command_call(list(configured)), context()).action == "ALLOW"
+    assert policy.decide(
+        command_call([sys.executable, "-B", "-c", "print('changed')"]),
+        context(),
+    ).action == "DENY"
