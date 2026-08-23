@@ -3,6 +3,8 @@
 import json
 from typing import cast
 
+from tikiagent.context.models import BaseContext
+from tikiagent.context.task_board import next_actionable_todo
 from tikiagent.llm.models import StructuredModelClient
 from tikiagent.orchestration.models import (
     SpecialistName,
@@ -36,7 +38,11 @@ def latest_result_is_verified(
 def next_required_specialist(
     state: TikiState,
 ) -> SpecialistName | None:
-    """按 SupervisorPlan 顺序找到尚无最新有效验证的 Specialist。"""
+    """优先按 Task Board 找待办，并兼容没有 Board 的旧工作流。"""
+
+    for specialist in state["required_specialists"]:
+        if next_actionable_todo(state["task_board"], specialist) is not None:
+            return specialist
 
     for specialist in state["required_specialists"]:
         if not latest_result_is_verified(state, specialist):
@@ -73,7 +79,11 @@ class SupervisorAgent:
         required = list(dict.fromkeys(plan.required_specialists))
         return plan.model_copy(update={"required_specialists": required})
 
-    def decide(self, state: TikiState) -> SupervisorDecision:
+    def decide(
+        self,
+        state: TikiState,
+        base_context: BaseContext | None = None,
+    ) -> SupervisorDecision:
         target = next_required_specialist(state)
         if target is None:
             return SupervisorDecision(
@@ -105,7 +115,11 @@ class SupervisorAgent:
                     },
                     {
                         "role": "user",
-                        "content": self._decision_context(state),
+                        "content": (
+                            base_context.render()
+                            if base_context is not None
+                            else self._decision_context(state)
+                        ),
                     },
                 ],
                 response_type=SupervisorDecision,
@@ -127,29 +141,45 @@ class SupervisorAgent:
         target: SpecialistName,
         state: TikiState,
     ) -> list[str]:
-        refs = ["acceptance_criteria"]
+        refs: list[str] = []
         if (
             target == "code_agent"
             and latest_result_is_verified(state, "research_agent")
         ):
-            refs.append("research_result")
+            research_result = state["specialist_results"].get(
+                "research_agent"
+            )
+            if research_result is not None:
+                result_id = research_result.get("result_id")
+                if isinstance(result_id, str):
+                    refs.append(result_id)
         report = state["specialist_verifications"].get(target)
         if report is not None and not latest_result_is_verified(state, target):
-            refs.append("verification_report")
-        return refs
+            raw_result = state["specialist_results"].get(target)
+            result_id = raw_result.get("result_id") if raw_result else None
+            if isinstance(result_id, str):
+                refs.append(result_id)
+            refs.append(report.verification_id)
+        return list(dict.fromkeys(refs))
 
     @staticmethod
     def _completion_refs(state: TikiState) -> list[str]:
-        return [
-            f"{specialist}_result"
-            for specialist in state["required_specialists"]
-        ]
+        refs: list[str] = []
+        for specialist in state["required_specialists"]:
+            result = state["specialist_results"].get(specialist)
+            result_id = result.get("result_id") if result else None
+            if isinstance(result_id, str):
+                refs.append(result_id)
+        return refs
 
     @staticmethod
     def _default_instruction(
         target: SpecialistName,
         state: TikiState,
     ) -> str:
+        todo = next_actionable_todo(state["task_board"], target)
+        if todo is not None and todo.status == "pending":
+            return todo.description
         if target == "research_agent":
             return "调研任务所需信息，保留真实 Web 来源和搜索证据"
         report = state["specialist_verifications"].get(target)

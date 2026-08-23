@@ -147,7 +147,7 @@ def test_code_result_requires_current_artifact_and_source(tmp_path: Path) -> Non
         completed=True,
         steps=2,
         changed_files=["comparison.html"],
-        context_refs_used=["research_result"],
+        context_refs_used=["research-result-1"],
     )
     report = gate(tmp_path).verify(
         handoff=completed_handoff("code_agent", result.result_id),

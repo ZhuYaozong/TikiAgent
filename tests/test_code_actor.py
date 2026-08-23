@@ -6,6 +6,11 @@ from tikiagent.agents import (
     MultiAgentCodeAgent,
     ReActCodeActor,
 )
+from tikiagent.context import (
+    BaseContext,
+    HistoryRecord,
+    WorkingMemory,
+)
 from tikiagent.harness import ToolResult
 from tikiagent.orchestration import Handoff, Plan
 
@@ -83,7 +88,7 @@ class SuccessfulMultiAgent:
     max_steps = 6
 
     def run(self, task: str) -> AgentRunResult:
-        assert "research_result" in task
+        assert "research summary" in task
         return AgentRunResult(
             final_text="网页完成",
             steps=3,
@@ -116,17 +121,39 @@ def test_multi_agent_code_result_links_handoff_without_messages() -> None:
         from_agent="supervisor",
         to_agent="code_agent",
         instruction="create report",
-        context_refs=["research_result"],
+        context_refs=["research-result-1"],
+    )
+    base_context = BaseContext(
+        agent="code_agent",
+        role="code",
+        system_rules=["只执行当前 Todo"],
+        working_memory=WorkingMemory(
+            task="create report",
+            phase="coding",
+            instruction="create report",
+            acceptance_criteria=["verified"],
+            todos=[],
+            relevant_history=[
+                HistoryRecord(
+                    record_id="research-result-1",
+                    task_id="task-1",
+                    session_id="session-1",
+                    record_type="result",
+                    producer="research_agent",
+                    summary="research summary",
+                )
+            ],
+        ),
     )
 
     result = agent.run(
         handoff=handoff,
-        context_payload={"research_result": {"summary": "research"}},
+        base_context=base_context,
     )
 
     assert result.handoff_id == "handoff-code-1"
     assert result.result_id
     assert result.changed_files == ["comparison.html"]
     assert "exit_code=0" in result.tests_run[0]
-    assert result.context_refs_used == ["research_result"]
+    assert result.context_refs_used == ["research-result-1"]
     assert "messages" not in result.model_dump()

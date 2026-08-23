@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from tikiagent.agents.research import ResearchAgent
+from tikiagent.context import BaseContext, WorkingMemory
 from tikiagent.harness.dispatcher import Dispatcher
 from tikiagent.harness.registry import RegisteredTool, ToolRegistry
 from tikiagent.llm.models import ModelResponse, ModelToolCall
@@ -40,9 +41,11 @@ def dispatcher() -> Dispatcher:
 class ScriptedModel:
     def __init__(self) -> None:
         self.calls = 0
+        self.message_snapshots: list[list[dict[str, Any]]] = []
 
     def complete(self, messages, tool_schemas) -> ModelResponse:
-        del messages, tool_schemas
+        del tool_schemas
+        self.message_snapshots.append(list(messages))
         self.calls += 1
         if self.calls == 1:
             return ModelResponse(
@@ -92,6 +95,22 @@ def handoff() -> Handoff:
     )
 
 
+def base_context() -> BaseContext:
+    return BaseContext(
+        agent="research_agent",
+        role="research",
+        system_rules=["keep sources"],
+        working_memory=WorkingMemory(
+            task="research framework",
+            phase="research",
+            instruction="research",
+            acceptance_criteria=["source required"],
+            todos=[],
+            relevant_history=[],
+        ),
+    )
+
+
 def test_result_links_handoff_and_search_observation() -> None:
     agent = ResearchAgent(
         model=ScriptedModel(),
@@ -109,6 +128,26 @@ def test_result_links_handoff_and_search_observation() -> None:
     assert result.observations[0].urls == [
         "https://example.com/release"
     ]
+    assert "messages" not in result.model_dump()
+
+
+def test_base_context_starts_local_react_messages_without_leaking_them() -> None:
+    model = ScriptedModel()
+    agent = ResearchAgent(
+        model=model,
+        structured_model=ScriptedStructuredModel(
+            "https://example.com/release"
+        ),
+        dispatcher=dispatcher(),
+    )
+
+    result = agent.run(handoff(), base_context())
+
+    assert "source required" in model.message_snapshots[0][1]["content"]
+    assert any(
+        message.get("role") == "tool"
+        for message in model.message_snapshots[1]
+    )
     assert "messages" not in result.model_dump()
 
 
