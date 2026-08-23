@@ -3,11 +3,17 @@
 import pytest
 
 from tikiagent.orchestration.state import (
+    RECENT_EVENT_LIMIT,
+    RECENT_HANDOFF_LIMIT,
     append_messages,
     append_tool_results,
     create_initial_state,
+    create_multi_agent_state,
     create_plan_verify_state,
+    keep_recent_events,
+    keep_recent_handoffs,
 )
+from tikiagent.orchestration.models import Handoff
 
 
 def test_create_initial_state_separates_runtime_fields_from_messages() -> None:
@@ -83,3 +89,45 @@ def test_max_attempts_must_be_positive() -> None:
             max_steps=8,
             max_attempts=0,
         )
+
+
+def test_multi_agent_uses_canonical_tiki_state_defaults() -> None:
+    state = create_multi_agent_state(
+        task="hybrid",
+        workspace_id="workspace",
+        max_steps=8,
+        max_delegations=4,
+    )
+
+    assert state["current_agent"] == "supervisor"
+    assert state["supervisor_plan"] is None
+    assert state["specialist_results"] == {}
+    assert state["specialist_verifications"] == {}
+    assert state["max_delegations"] == 4
+
+
+def test_recent_events_are_bounded() -> None:
+    events = keep_recent_events(
+        [],
+        [f"event-{index}" for index in range(RECENT_EVENT_LIMIT + 5)],
+    )
+
+    assert len(events) == RECENT_EVENT_LIMIT
+    assert events[0] == "event-5"
+
+
+def test_recent_handoffs_are_bounded() -> None:
+    handoffs = [
+        Handoff(
+            handoff_id=f"handoff-{index}",
+            from_agent="supervisor",
+            to_agent="research_agent",
+            instruction="research",
+        )
+        for index in range(RECENT_HANDOFF_LIMIT + 3)
+    ]
+
+    recent = keep_recent_handoffs([], handoffs)
+
+    assert len(recent) == RECENT_HANDOFF_LIMIT
+    assert recent[0].handoff_id == "handoff-3"
