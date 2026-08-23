@@ -1,8 +1,7 @@
 """把现有 ReAct Agent 适配为不同工作流的 Code 执行组件。"""
 
-from typing import Any
-
 from tikiagent.agents.react import MaxStepsExceeded, ReActAgent
+from tikiagent.context.models import BaseContext
 from tikiagent.orchestration.models import (
     ActorResult,
     CodeResult,
@@ -64,15 +63,16 @@ class MultiAgentCodeAgent:
         self,
         *,
         handoff: Handoff,
-        context_payload: dict[str, Any],
+        base_context: BaseContext,
     ) -> CodeResult:
         if handoff.to_agent != "code_agent":
             raise ValueError("CodeAgent 收到了错误目标的 Handoff")
-        task = (
-            f"Supervisor 指令：{handoff.instruction}\n"
-            "只允许使用以下结构化上下文：\n"
-            f"{context_payload}"
-        )
+        if base_context.agent != "code_agent":
+            raise ValueError("CodeAgent 收到了错误 Profile 的 Base Context")
+
+        # ReActAgent.run() 会为本次执行创建局部 messages；Base Context 只作为
+        # 本轮初始输入，不接收其他 Agent 的内部 messages。
+        task = base_context.render()
         try:
             run_result = self.agent.run(task)
         except MaxStepsExceeded as error:

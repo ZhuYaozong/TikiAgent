@@ -83,7 +83,10 @@ def test_old_pass_does_not_verify_new_result() -> None:
     decision = SupervisorAgent(StructuredModel()).decide(value)
     assert decision.action == "delegate"
     assert decision.target_agent == "research_agent"
-    assert "verification_report" in decision.context_refs
+    assert "new-result" in decision.context_refs
+    assert value["specialist_verifications"][
+        "research_agent"
+    ].verification_id in decision.context_refs
 
 
 def test_pass_for_other_agent_cannot_verify_result() -> None:

@@ -1,8 +1,7 @@
 """正式 Multi-Agent Graph 路由与 Verification Gate 闭环测试。"""
 
-from typing import Any
-
-from tikiagent.agents.supervisor import SupervisorAgent
+from tikiagent.agents.supervisor import SupervisorAgent, next_required_specialist
+from tikiagent.context import BaseContext
 from tikiagent.orchestration.models import (
     CodeResult,
     Handoff,
@@ -44,9 +43,15 @@ class StructuredModel:
 class ResearchStub:
     def __init__(self) -> None:
         self.calls = 0
+        self.contexts: list[BaseContext] = []
 
-    def run(self, handoff: Handoff) -> ResearchResult:
+    def run(
+        self,
+        handoff: Handoff,
+        base_context: BaseContext,
+    ) -> ResearchResult:
         self.calls += 1
+        self.contexts.append(base_context)
         return ResearchResult(
             result_id=f"research-{self.calls}",
             handoff_id=handoff.handoff_id,
@@ -76,11 +81,11 @@ class CodeStub:
 
     def __init__(self) -> None:
         self.calls = 0
-        self.payloads: list[dict[str, Any]] = []
+        self.contexts: list[BaseContext] = []
 
-    def run(self, *, handoff: Handoff, context_payload):
+    def run(self, *, handoff: Handoff, base_context: BaseContext):
         self.calls += 1
-        self.payloads.append(context_payload)
+        self.contexts.append(base_context)
         return CodeResult(
             result_id=f"code-{self.calls}",
             handoff_id=handoff.handoff_id,
@@ -117,10 +122,19 @@ class LinkedVerifier:
         )
 
 
-def workflow(required, *, code_passes=None, max_delegations=4):
+def workflow(
+    required,
+    *,
+    research_passes=None,
+    code_passes=None,
+    max_delegations=4,
+):
     research = ResearchStub()
     code = CodeStub()
-    research_verifier = LinkedVerifier("research_agent", [True])
+    research_verifier = LinkedVerifier(
+        "research_agent",
+        research_passes or [True],
+    )
     code_verifier = LinkedVerifier(
         "code_agent",
         code_passes or [True],
@@ -152,6 +166,11 @@ def test_research_only_must_pass_verification_gate() -> None:
     assert research_gate.calls == 1
     assert code_gate.calls == 0
     assert state["specialist_verifications"]["research_agent"].passed
+    assert research.contexts[0].agent == "research_agent"
+    assert all(
+        item.owner == "research_agent"
+        for item in research.contexts[0].working_memory.todos
+    )
 
 
 def test_hybrid_passes_gate_after_each_specialist() -> None:
@@ -166,8 +185,25 @@ def test_hybrid_passes_gate_after_each_specialist() -> None:
     assert code.calls == 1
     assert research_gate.calls == 1
     assert code_gate.calls == 1
-    assert "research_result" in code.payloads[0]
-    assert len(state["recent_handoffs"]) == 2
+    history_ids = {
+        item.record_id
+        for item in code.contexts[0].working_memory.relevant_history
+    }
+    assert "research-1" in history_ids
+    history = value.history_for(state)
+    assert [item.record_type for item in history] == [
+        "handoff",
+        "result",
+        "verification",
+        "handoff",
+        "result",
+        "verification",
+    ]
+    assert state["history_cursor"] == len(history)
+    assert all(
+        item.status == "completed"
+        for item in state["task_board"].items.values()
+    )
 
 
 def test_failed_code_result_retries_and_only_latest_pass_finishes() -> None:
@@ -186,7 +222,28 @@ def test_failed_code_result_retries_and_only_latest_pass_finishes() -> None:
     assert latest["result_id"] == "code-2"
     assert report.result_id == "code-2"
     assert report.passed is True
-    assert "verification_report" in code.payloads[1]
+    retry_history = code.contexts[1].working_memory.relevant_history
+    assert "code-1" in {item.record_id for item in retry_history}
+    assert any(item.record_type == "verification" for item in retry_history)
+    todo = next(iter(state["task_board"].items.values()))
+    assert todo.attempts == 2
+    assert todo.status == "completed"
+
+
+def test_failed_research_result_receives_latest_verification_on_retry() -> None:
+    value, research, _, research_gate, _ = workflow(
+        ["research_agent"],
+        research_passes=[False, True],
+    )
+
+    state = value.invoke("research")
+
+    retry_history = research.contexts[1].working_memory.relevant_history
+    assert state["status"] == "completed"
+    assert research.calls == 2
+    assert research_gate.calls == 2
+    assert "research-1" in {item.record_id for item in retry_history}
+    assert any(item.record_type == "verification" for item in retry_history)
 
 
 def test_failure_stops_when_new_delegation_would_exceed_limit() -> None:
@@ -210,6 +267,64 @@ def test_graph_uses_explicit_verification_gate_node() -> None:
     assert {"supervisor", "research_agent", "code_agent", "verification_gate"} <= nodes
 
 
+class MultipleCodeTodoSupervisor:
+    """测试 TaskBoard 能让同一 Specialist 连续完成多项工作。"""
+
+    def plan(self, task: str) -> SupervisorPlan:
+        del task
+        return SupervisorPlan(
+            goal="two code todos",
+            required_specialists=["code_agent", "code_agent"],
+            acceptance_criteria=["both verified"],
+        )
+
+    def decide(self, state, base_context) -> SupervisorDecision:
+        del base_context
+        target = next_required_specialist(state)
+        if target is None:
+            return SupervisorDecision(
+                action="finish",
+                target_agent=None,
+                instruction="",
+                reason="all todos complete",
+            )
+        return SupervisorDecision(
+            action="delegate",
+            target_agent=target,
+            instruction="execute next todo",
+            reason="pending todo",
+        )
+
+
+def test_same_agent_multiple_todos_each_require_result_and_verification() -> None:
+    code = CodeStub()
+    gate = LinkedVerifier("code_agent", [True, True])
+    value = MultiAgentWorkflow(
+        supervisor=MultipleCodeTodoSupervisor(),
+        research_agent=ResearchStub(),
+        code_agent=code,
+        verification_gate=VerificationGate(
+            research_verifier=LinkedVerifier("research_agent", [True]),
+            code_verifier=gate,
+        ),
+        workspace_id="workspace",
+    )
+
+    state = value.invoke("two coding tasks")
+
+    code_todos = [
+        item
+        for item in state["task_board"].items.values()
+        if item.owner == "code_agent"
+    ]
+    assert state["status"] == "completed"
+    assert code.calls == 2
+    assert gate.calls == 2
+    assert len(code_todos) == 2
+    assert all(item.status == "completed" for item in code_todos)
+    assert {item.result_id for item in code_todos} == {"code-1", "code-2"}
+
+
 class UnsafeFinishingSupervisor:
     def plan(self, task: str) -> SupervisorPlan:
         del task
@@ -219,8 +334,8 @@ class UnsafeFinishingSupervisor:
             acceptance_criteria=["verified"],
         )
 
-    def decide(self, state) -> SupervisorDecision:
-        del state
+    def decide(self, state, base_context) -> SupervisorDecision:
+        del state, base_context
         return SupervisorDecision(
             action="finish",
             target_agent=None,

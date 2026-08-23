@@ -1,10 +1,10 @@
 # TikiAgent
 
-TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。它使用 Supervisor 根据任务动态调度 ResearchAgent 和 CodeAgent，通过统一 Verification Gate 验证每次 Specialist 交付，再由 Supervisor 决定继续委派或结束。
+TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。它使用 Supervisor 根据任务动态调度 ResearchAgent 和 CodeAgent，通过统一 Verification Gate 验证每次 Specialist 交付，再由 Supervisor 决定继续委派或结束。Context Engine 根据当前 Agent、任务阶段和显式引用重新构建 Base Context，避免 Specialist 直接继承全部历史。
 
-当前版本为 **v0.4 Multi-Agent + Verification Gate**。
+当前版本为 **v0.5.0a1 Context Engine I**。
 
-## v0.4 架构
+## v0.5 Context-aware Multi-Agent 架构
 
 ```text
                          Supervisor
@@ -42,6 +42,34 @@ Specialist Node
 
 Research-only、Coding-only 和 Hybrid 的 Specialist Result 都必须经过 Verification Gate。Gate 是通用验证入口，不要求每次都调用 LLM：Research 使用来源规则验证，Code 使用只读环境检查。
 
+Context Plane 独立于 Control Plane：
+
+```text
+TikiState + Task Board          History Store
+          │                          │
+          └──────────┬───────────────┘
+                     ▼
+                 Retriever
+                     ▼
+          Context Builder + Profile
+                     ▼
+                Base Context
+                     ▼
+       Agent 单次执行的局部 ReAct messages
+```
+
+`ContextBuilder` 只生成本轮执行的 Base Context。ResearchAgent 和 CodeAgent 随后在各自单次 `run()` 内创建 short-term ReAct messages：
+
+```text
+Base Context
+→ assistant ToolCall
+→ Tool Observation
+→ assistant 下一步
+→ Result
+```
+
+这些内部 messages 不进入 `TikiState`、History Store 或下一个 Agent。Local Summary、Recent Messages 和压缩将在 Context Engine II 实现。
+
 ## Result 与 Verification 身份链
 
 每次委派、交付和验证都通过 ID 明确关联：
@@ -73,6 +101,10 @@ and report.subject_agent == specialist
 - **VerificationGate**：选择验证策略，并强制检查 Handoff、Result 和 Verification 的 ID 关联；
 - **ResearchResultVerifier**：检查 findings、query、来源数量以及 URL 与 Web Observation 的对应关系；
 - **CodeEnvironmentVerifier**：检查本轮产物归属、固定命令结果和 Hybrid 来源引用；
+- **HistoryStore**：保存未来 Agent 可复用的 Handoff、Result 和 Verification，不保存完整执行 Trace；
+- **Retriever**：按 Profile 执行 exact → keyword → recent 检索；
+- **ContextBuilder**：把任务、验收标准、Task Board 和相关 History 组装为 Base Context；
+- **TaskBoard**：结构化跟踪多个 Todo 的 owner、attempts 和身份链；
 - **TikiState**：整个 Workflow 唯一 canonical runtime state；
 - **Dispatcher**：验证工具名称与参数、执行 Python Tool、统一返回 `ToolResult`；
 - **Workspace**：拒绝绝对路径和目录逃逸；
@@ -85,6 +117,8 @@ Agent   = 决定做什么
 Harness = 决定怎样执行
 Gate    = 决定当前 Result 是否有足够证据
 Supervisor = 决定验证之后往哪里走
+Retriever = 决定找什么
+ContextBuilder = 决定怎样组装 Base Context
 ```
 
 ## Tool Isolation
@@ -124,24 +158,39 @@ ResearchResult
     ✓ result_id / handoff_id
 ```
 
-CodeAgent 只获得 Handoff 中 `context_refs` 指定的数据，例如：
+Handoff 的 `context_refs` 使用真实实体 ID，不再使用 `research_result`、`verification_report` 等符号名称：
 
 ```text
-acceptance_criteria
-research_result
-verification_report
+research result_id
+failed code result_id
+latest verification_id
 ```
 
-这为下一阶段 Context Builder 和 Retriever 保留了明确接入点。
+任务、验收标准和当前 Todo 是 State 中的运行事实，由 ContextBuilder 根据 Profile 自动加入，不伪装成 History 引用。
+
+Retriever 默认执行：
+
+```text
+exact context_refs
+        ↓ 没有命中
+keyword
+        ↓ 仍没有命中
+recent
+```
+
+Profile 可以配置少量 keyword/recent 补充检索。CodeAgent 和 Verifier 默认不在精确引用后追加旧同主题记录，避免最新 FAIL 与旧 PASS 同时进入修复上下文。
+
+当前 Verification Gate 是规则与环境验证，直接消费 Handoff、Result 和 Workspace 证据，不为了接口统一强制生成 LLM Prompt。`VerifierProfile` 保留给未来需要模型输入的验证策略。
 
 ## Canonical TikiState
 
 ReAct、Plan/Verify 和 Multi-Agent 工作流共享同一个 `TikiState` schema，不引入 `MultiAgentState`、`ContextState` 或运行时转换层。
 
-v0.4 的主要状态分区：
+v0.5 Context I 的主要状态分区：
 
 ```text
 Task
+├── task_id
 ├── task
 └── session_id
 
@@ -155,27 +204,33 @@ Planning / Orchestration
 
 Collaboration / Verification
 ├── latest_handoff
+├── task_board
 ├── specialist_results
 ├── specialist_verifications
 └── verification_report
 
 Runtime / Completion
 ├── workspace_id
+├── history_cursor
 ├── status
 └── final_result
 ```
 
 `specialist_results` 和 `specialist_verifications` 只保存每个 Specialist 的最新状态，不保存无限历史。
 
-`recent_events` 和 `recent_handoffs` 是 v0.4 的有界过渡字段：
-
-- `recent_events` 最多保留 50 条，Harness Engineering 阶段迁移到 Trace；
-- `recent_handoffs` 最多保留 20 条，Context Engine 阶段将完整历史迁移到 History Store。
+- `TaskBoard` 可以让同一个 Agent 拥有多个 Todo；每项 Todo 独立经历 `pending → in_progress → awaiting_verification → completed/failed`；
+- `HistoryStore` 保留每次 Handoff、Result 和 Verification，旧尝试不会被最新状态覆盖；
+- `history_cursor` 只是外部 History 的位置引用，不把 History 复制回 State；
+- `recent_handoffs` 已从 State 移除；
+- `recent_events` 仍最多保留 50 条，将在 Harness Engineering 阶段迁移到 Trace。
 
 ```text
 State = 系统现在是什么状态
 Trace = 系统之前发生过什么
 History = 过去产生、未来可能检索的信息
+Task Board = 当前任务做到哪里
+Working Memory = 当前步骤所需信息集合
+Base Context = ContextBuilder 为本轮 Agent 组装的输入
 ```
 
 ## Quick Start
@@ -296,6 +351,13 @@ src/tikiagent/
 │   ├── research.py
 │   ├── supervisor.py
 │   └── verifier.py
+├── context/
+│   ├── builder.py
+│   ├── history.py
+│   ├── models.py
+│   ├── profiles.py
+│   ├── retriever.py
+│   └── task_board.py
 ├── harness/
 │   ├── command_tools.py
 │   ├── dispatcher.py
@@ -330,15 +392,23 @@ src/tikiagent/
 - Verifier FAIL 后返回 Supervisor；
 - `max_delegations`、Agent `max_steps` 和 LangGraph `recursion_limit`；
 - Registry 能力隔离；
-- 有界 `recent_events` / `recent_handoffs`；
+- Base Context 与单次 ReAct messages 的两层上下文隔离；
+- History Store 幂等写入、作用域和冲突检查；
+- exact → keyword → recent 以及 Profile 补充策略；
+- Supervisor 全局 Task Board 与 Specialist Todo 隔离；
+- 同一个 Agent 多个 Todo 的独立 Result/Verification 生命周期；
+- Retry 只获得显式引用的新 FAIL，不混入旧 PASS；
+- 有界 `recent_events`；
 - Workspace Boundary、工具错误、命令超时和输出截断；
-- v0.1～v0.3 全量回归。
+- v0.1～v0.4 全量回归。
 
 ## 当前限制
 
 - Command Runtime 的 Workspace `cwd` 限制不是操作系统 Sandbox，子进程仍可能主动访问 Workspace 外资源；
 - 尚未实现 Permission、Human Approval、Checkpoint、Resume 和正式 Trace；
-- 尚未实现 History Store、Retriever、Context Builder 和 Compressor；
+- `InMemoryHistoryStore` 在进程退出后不保留数据，持久化后端将在后续阶段实现；
+- 尚未实现 Context Monitor、Compressor、Notepad、动态 Prompt、动态 Tool Selection 和 Finalization；
+- 本阶段不压缩 Agent 单次执行内部的 Local Summary / Recent Messages；
 - Research rule verification 能证明来源来自真实 Web Observation，不能自动证明来源内容绝对真实；
 - Supervisor 的语义规划依赖模型质量，关键 FINISH 与身份关联由程序规则保护；
 - OpenAI-compatible 后端共享协议格式，但不同模型的 Tool Calling 能力仍可能不同。
@@ -349,7 +419,8 @@ src/tikiagent/
 - [x] v0.2 LangGraph 与 canonical TikiState；
 - [x] v0.3 Plan → Execute → Verify；
 - [x] v0.4 Supervisor、ResearchAgent、CodeAgent、Handoff、Verification Gate；
-- [ ] v0.5 History、Retriever、Context Builder、Monitor、Compressor、Notepad；
+- [x] v0.5 Context I：History、Retriever、Task Board、Context Profiles、Context Builder；
+- [ ] v0.5 Context II：Monitor、Compressor、Notepad、动态 Prompt/Tool、Finalization；
 - [ ] v0.6 Permission、Approval、Checkpoint、Resume、Trace；
 - [ ] Session、CLI、Event Stream 与 Evaluation；
 - [ ] Single-Agent / Plan-Verify / Multi-Agent / Context Engine 消融实验。

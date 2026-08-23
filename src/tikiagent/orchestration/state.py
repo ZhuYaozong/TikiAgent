@@ -3,6 +3,7 @@
 from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 
+from tikiagent.context.models import TaskBoard
 from tikiagent.orchestration.models import (
     ActorResult,
     Handoff,
@@ -32,7 +33,6 @@ WorkflowStatus = Literal[
 ]
 
 RECENT_EVENT_LIMIT = 50
-RECENT_HANDOFF_LIMIT = 20
 
 
 class PendingToolCall(TypedDict):
@@ -70,15 +70,6 @@ def keep_recent_events(
     return (current + updates)[-RECENT_EVENT_LIMIT:]
 
 
-def keep_recent_handoffs(
-    current: list[Handoff],
-    updates: list[Handoff],
-) -> list[Handoff]:
-    """当前运行只保留有界 Handoff，未来完整记录进入 History。"""
-
-    return (current + updates)[-RECENT_HANDOFF_LIMIT:]
-
-
 def merge_specialist_results(
     current: dict[SpecialistName, dict[str, Any]],
     updates: dict[SpecialistName, dict[str, Any]],
@@ -101,6 +92,7 @@ class TikiState(TypedDict):
     """当前工作流快照；不是 History、Workspace 或完整 Memory。"""
 
     # Task identity
+    task_id: str
     task: str
     session_id: str
 
@@ -129,7 +121,7 @@ class TikiState(TypedDict):
     delegation_count: int
     max_delegations: int
     latest_handoff: Handoff | None
-    recent_handoffs: Annotated[list[Handoff], keep_recent_handoffs]
+    task_board: TaskBoard
     specialist_results: Annotated[
         dict[SpecialistName, dict[str, Any]],
         merge_specialist_results,
@@ -139,6 +131,7 @@ class TikiState(TypedDict):
         merge_specialist_verifications,
     ]
     recent_events: Annotated[list[str], keep_recent_events]
+    history_cursor: int
 
     # Runtime references and limits
     workspace_id: str
@@ -157,6 +150,7 @@ def create_initial_state(
     workspace_id: str,
     max_steps: int,
     session_id: str | None = None,
+    task_id: str | None = None,
 ) -> TikiState:
     """创建字段完整、可直接传入 Graph 的初始状态。"""
 
@@ -164,6 +158,7 @@ def create_initial_state(
         raise ValueError("max_steps 必须大于 0")
 
     return {
+        "task_id": task_id or str(uuid4()),
         "task": task,
         "session_id": session_id or str(uuid4()),
         "messages": [
@@ -187,10 +182,11 @@ def create_initial_state(
         "delegation_count": 0,
         "max_delegations": 1,
         "latest_handoff": None,
-        "recent_handoffs": [],
+        "task_board": TaskBoard(),
         "specialist_results": {},
         "specialist_verifications": {},
         "recent_events": [],
+        "history_cursor": 0,
         "workspace_id": workspace_id,
         "step_count": 0,
         "max_steps": max_steps,
@@ -206,6 +202,7 @@ def create_plan_verify_state(
     max_steps: int,
     max_attempts: int,
     session_id: str | None = None,
+    task_id: str | None = None,
 ) -> TikiState:
     """创建外层 Plan → Execute → Verify 工作流状态。"""
 
@@ -215,6 +212,7 @@ def create_plan_verify_state(
         raise ValueError("max_attempts 必须大于 0")
 
     return {
+        "task_id": task_id or str(uuid4()),
         "task": task,
         "session_id": session_id or str(uuid4()),
         "messages": [],
@@ -235,10 +233,11 @@ def create_plan_verify_state(
         "delegation_count": 0,
         "max_delegations": 1,
         "latest_handoff": None,
-        "recent_handoffs": [],
+        "task_board": TaskBoard(),
         "specialist_results": {},
         "specialist_verifications": {},
         "recent_events": [],
+        "history_cursor": 0,
         "workspace_id": workspace_id,
         "step_count": 0,
         "max_steps": max_steps,
@@ -254,6 +253,7 @@ def create_multi_agent_state(
     max_steps: int,
     max_delegations: int,
     session_id: str | None = None,
+    task_id: str | None = None,
 ) -> TikiState:
     """使用同一个 canonical TikiState 创建 Multi-Agent 初始状态。"""
 
@@ -268,6 +268,7 @@ def create_multi_agent_state(
         workspace_id=workspace_id,
         max_steps=max_steps,
         session_id=session_id,
+        task_id=task_id,
     )
     return {
         **state,

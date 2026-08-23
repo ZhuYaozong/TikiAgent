@@ -1,6 +1,7 @@
 """真实 Supervisor Graph：调研后生成并验证来源可追溯的网页。"""
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from tikiagent.harness import (
     build_web_registry,
     register_command_tool,
 )
+from tikiagent.context import BaseContext
 from tikiagent.llm import ModelSettings, OpenAICompatibleClient
 from tikiagent.orchestration import (
     Handoff,
@@ -36,7 +38,7 @@ from tikiagent.orchestration import (
 CODE_SYSTEM_PROMPT = """你是 TikiAgent CodeAgent。
 只执行 Supervisor 当前 Handoff，不负责宣布整个任务完成。
 必须通过工具观察并修改 Workspace，目标文件固定为 comparison.html。
-如果上下文包含 research_result，使用其中事实并加入真实来源链接。
+如果 Base Context 包含 ResearchResult，使用其中事实并加入真实来源链接。
 使用 HTML/CSS 和 Python 标准库，不安装依赖，不访问 Workspace 外文件。
 完成后重新读取文件或运行检查。最终是否通过由 Verification Gate 决定。
 """
@@ -72,7 +74,11 @@ class LazyResearchAgent:
         self.model = model
         self.agent: ResearchAgent | None = None
 
-    def run(self, handoff: Handoff) -> ResearchResult:
+    def run(
+        self,
+        handoff: Handoff,
+        base_context: BaseContext,
+    ) -> ResearchResult:
         if self.agent is None:
             registry = build_web_registry(
                 TavilyProvider(SearchSettings.from_env())
@@ -82,7 +88,7 @@ class LazyResearchAgent:
                 structured_model=self.model,
                 dispatcher=Dispatcher(registry),
             )
-        return self.agent.run(handoff)
+        return self.agent.run(handoff, base_context)
 
 
 def parse_args() -> argparse.Namespace:
@@ -154,6 +160,34 @@ def main() -> None:
         f"delegations={final_state['delegation_count']}"
     )
     print(final_state["final_result"])
+    print("[Task Board]")
+    print(
+        json.dumps(
+            [
+                item.model_dump(mode="json")
+                for item in final_state["task_board"].items.values()
+            ],
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    print("[History]")
+    print(
+        json.dumps(
+            [
+                {
+                    "sequence": item.sequence,
+                    "record_id": item.record_id,
+                    "record_type": item.record_type,
+                    "producer": item.producer,
+                    "refs": item.refs,
+                }
+                for item in workflow.history_for(final_state)
+            ],
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     print(
         "artifact="
         f"{workspace.resolve('comparison.html') if 'code_agent' in final_state['specialist_results'] else None}"

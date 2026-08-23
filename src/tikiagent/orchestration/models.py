@@ -139,6 +139,7 @@ class Handoff(ControlModel):
     handoff_id: str = Field(default_factory=lambda: str(uuid4()))
     from_agent: AgentName
     to_agent: SpecialistName
+    todo_id: str | None = None
     instruction: str = Field(min_length=1)
     context_refs: list[str] = Field(default_factory=list)
     result_id: str | None = None

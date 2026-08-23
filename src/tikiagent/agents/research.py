@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
+from tikiagent.context.models import BaseContext
 from tikiagent.harness.dispatcher import Dispatcher
 from tikiagent.harness.models import ToolError, ToolResult
 from tikiagent.llm.models import ModelClient, StructuredModelClient
@@ -67,13 +68,28 @@ class ResearchAgent:
             "web_extract": max_extracts,
         }
 
-    def run(self, handoff: Handoff) -> ResearchResult:
+    def run(
+        self,
+        handoff: Handoff,
+        base_context: BaseContext | None = None,
+    ) -> ResearchResult:
         if handoff.to_agent != "research_agent":
             raise ValueError("ResearchAgent 收到了错误目标的 Handoff")
+        if base_context is not None and base_context.agent != "research_agent":
+            raise ValueError(
+                "ResearchAgent 收到了错误 Profile 的 Base Context"
+            )
 
+        base_context_text = (
+            base_context.render()
+            if base_context is not None
+            else handoff.instruction
+        )
+
+        # messages 是本次 run() 私有的 short-term ReAct 上下文。
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": RESEARCH_SYSTEM_PROMPT},
-            {"role": "user", "content": handoff.instruction},
+            {"role": "user", "content": base_context_text},
         ]
         tool_results: list[ToolResult] = []
         tool_counts = {name: 0 for name in self.tool_limits}
@@ -138,7 +154,7 @@ class ResearchAgent:
                     {
                         "role": "user",
                         "content": (
-                            f"研究指令：{handoff.instruction}\n"
+                            f"基础上下文：{base_context_text}\n"
                             f"Agent 草稿：{draft_text}\n"
                             "搜索证据："
                             f"{json.dumps([item.model_dump(mode='json') for item in observations], ensure_ascii=False)}"
