@@ -16,6 +16,8 @@ def test_event_adapter_projects_public_events_and_rejects_bad_order() -> None:
     assert state.current_agent == "code_agent"
     assert state.busy is True
     assert state.timeline[-1].kind == "agent"
+    assert state.feed[-1].title == "CodeAgent"
+    assert state.feed[-1].summary == "开始执行"
 
     try:
         adapter.reduce(state, event)
@@ -23,6 +25,68 @@ def test_event_adapter_projects_public_events_and_rejects_bad_order() -> None:
         assert "重复或乱序" in str(error)
     else:  # pragma: no cover
         raise AssertionError("重复事件必须被拒绝")
+
+
+def test_conversation_feed_keeps_answers_and_hides_low_level_payloads() -> None:
+    bus = EventBus(stream_id="stream-1")
+    scope = EventScope(session_id="session-1", task_id="task-1")
+    adapter = TuiEventAdapter()
+    state = TuiViewState()
+    state = adapter.reduce(
+        state,
+        bus.emit(
+            "session_started",
+            scope=scope,
+            source="application_controller",
+            correlation_id="session-1",
+            message="Session 已创建",
+        ),
+    )
+    assert state.feed == ()
+    state = adapter.reduce(
+        state,
+        bus.emit(
+            "turn_received",
+            scope=scope,
+            source="application_controller",
+            correlation_id="task-1",
+            message="搜索 Agent 新闻",
+        ),
+    )
+    state = adapter.reduce(
+        state,
+        bus.emit(
+            "tool_result_received",
+            scope=scope,
+            source="execution_harness_adapter",
+            correlation_id="call-1",
+            message="web_search: tool_execution_finished",
+            data={
+                "tool_result": {
+                    "ok": True,
+                    "output": {
+                        "path": "result.json",
+                        "stdout": "不应进入展示层的超长原始正文",
+                    },
+                }
+            },
+        ),
+    )
+    answer = "# 调研总结\n\n发现一\n\n## 来源\n<https://example.com>"
+    state = adapter.reduce(
+        state,
+        bus.emit(
+            "final_answer",
+            scope=scope,
+            source="application_controller",
+            correlation_id="task-1",
+            message=answer,
+        ),
+    )
+
+    assert [item.kind for item in state.feed] == ["user", "tool", "assistant"]
+    assert state.feed[-1].detail == answer
+    assert "超长原始正文" not in (state.feed[1].detail or "")
 
 
 def test_outcome_projection_keeps_checkpoint_fields_without_becoming_authority() -> None:

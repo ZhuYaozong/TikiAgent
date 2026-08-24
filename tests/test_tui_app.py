@@ -45,7 +45,13 @@ class FakeBackend:
         if "审批" not in user_input:
             self.bus.emit("intent_routed", scope=scope, source="application_controller",
                           correlation_id="turn-1", message="Intent Router 返回 CHAT")
-            answer = "chat answer"
+            answer = (
+                "# 调研总结\n\n"
+                + "\n".join(f"- 关键发现 {index}" for index in range(18))
+                + "\n\n## 来源\n<https://example.com/source>"
+                if "长回答" in user_input
+                else "chat answer"
+            )
             self.transcript.append(TranscriptItem(role="assistant", content=answer, status="chat_completed"))
             self.bus.emit("final_answer", scope=scope, source="application_controller",
                           correlation_id="turn-1", message=answer)
@@ -140,6 +146,32 @@ def test_real_runtime_can_start_tui_without_model_environment(tmp_path: Path) ->
             assert app.view_state.session_id is not None
             assert app.view_state.status == "session_created"
             assert app.operation_in_flight is None
+    asyncio.run(exercise())
+
+
+def test_conversation_layout_keeps_long_answer_and_input_visible(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        app, _ = build_app(tmp_path)
+        async with app.run_test(size=(120, 34)) as pilot:
+            await app.workers.wait_for_complete()
+            app._start_operation(
+                "submit",
+                {"session_id": app.view_state.session_id, "user_input": "长回答"},
+            )
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assistant = app.query(".feed-assistant").last()
+            prompt = app.query_one("#prompt")
+            footer = app.query_one("Footer")
+            side = app.query_one("#side-panel")
+            assert "https://example.com/source" in app.view_state.feed[-1].detail
+            assert assistant.region.height > 8
+            assert prompt.region.y < footer.region.y
+            assert side.region.width <= 38
+            app.action_toggle_sidebar()
+            assert side.display is False
+
     asyncio.run(exercise())
 
 

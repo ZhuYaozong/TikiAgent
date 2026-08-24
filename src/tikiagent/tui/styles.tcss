@@ -1,72 +1,169 @@
 Screen {
-    background: #07101f;
-    color: #dbeafe;
+    background: #101113;
+    color: #d7d1c9;
 }
 
-Header, Footer {
-    background: #101b33;
-    color: #7dd3fc;
+#root { height: 1fr; }
+
+#top-bar {
+    height: 3;
+    padding: 0 2;
+    background: #151719;
+    border-bottom: solid #2f3437;
+    content-align: left middle;
+}
+
+#brand {
+    width: 22;
+    height: 1;
+    color: #f3ede3;
+    text-style: bold;
+}
+
+#top-status {
+    width: 1fr;
+    height: 1;
+    color: #9aa4a6;
+    content-align: right middle;
 }
 
 #body { height: 1fr; }
 
 #main-panel {
-    width: 2fr;
-    min-width: 58;
-    border: round #2563eb;
-    padding: 0 1;
+    width: 1fr;
+    min-width: 48;
+    background: #101113;
+}
+
+#feed {
+    height: 1fr;
+    padding: 1 2;
+    scrollbar-color: #4a8f86;
+    scrollbar-background: #151719;
 }
 
 #side-panel {
-    width: 1fr;
-    min-width: 36;
-    border: round #475569;
-}
-
-.panel-title, .dialog-title {
-    height: 1;
-    color: #93c5fd;
-    text-style: bold;
-}
-
-.danger { color: #fb7185; }
-.muted { color: #94a3b8; padding: 0 1; }
-
-#timeline {
-    height: 1fr;
-    background: #07101f;
-    scrollbar-color: #2563eb;
+    width: 38;
+    min-width: 32;
+    height: 100%;
+    background: #151719;
+    border-left: solid #2f3437;
 }
 
 .status-card {
-    margin: 1;
+    height: auto;
+    margin: 1 1 0 1;
     padding: 1;
-    background: #111827;
-    border-left: thick #2563eb;
+    background: #1a1c1e;
+    border-left: solid #4a8f86;
 }
 
-#answer-card {
-    max-height: 8;
+.muted {
+    color: #8a9294;
     padding: 1;
-    margin-top: 1;
-    background: #0f2a24;
-    border-left: thick #22c55e;
 }
 
-#notice-bar {
-    height: 1;
+.feed-card {
+    height: auto;
+    min-height: 1;
+    margin: 0 0 1 0;
     padding: 0 1;
-    color: #cbd5e1;
-    background: #111827;
+    border-left: solid #3f474b;
 }
 
-#prompt { border: round #334155; }
-#workspace-tree { height: 1fr; background: #0b1220; }
-#help-card { padding: 1 2; color: #cbd5e1; }
+.feed-card Markdown {
+    height: auto;
+    background: transparent;
+    padding: 0;
+}
+
+.feed-welcome {
+    color: #b7b0a8;
+    border-left: solid #4a8f86;
+}
+
+.feed-user {
+    background: #222426;
+    border-left: solid #f4bf75;
+    padding: 1;
+}
+
+.feed-assistant {
+    background: #151d1b;
+    border-left: solid #7fd6c2;
+    padding: 1;
+}
+
+.feed-routing { border-left: solid #b9a7e6; }
+.feed-agent { border-left: solid #7fd6c2; }
+.feed-tool { border-left: solid #f4bf75; }
+.feed-approval { border-left: solid #ef9f76; }
+.feed-verification { border-left: solid #7fd68a; }
+.feed-error { border-left: solid #ef6f6c; }
+
+.feed-summary {
+    height: auto;
+    min-height: 1;
+}
+
+.feed-detail {
+    height: auto;
+    max-height: 12;
+    color: #b7b0a8;
+    padding: 0 1 1 1;
+}
+
+#input-row {
+    height: 3;
+    margin: 0 1;
+    padding: 0 1;
+    border: round #4a8f86;
+    background: #151719;
+}
+
+#prompt-mark {
+    width: 3;
+    height: 1;
+    color: #7fd6c2;
+    text-style: bold;
+    content-align: center middle;
+}
+
+#prompt {
+    width: 1fr;
+    height: 1;
+    border: none;
+    background: #151719;
+    color: #f3ede3;
+}
+
+#input-hint {
+    width: 24;
+    height: 1;
+    color: #8a9294;
+    content-align: right middle;
+}
+
+Footer {
+    background: #151719;
+    color: #9aa4a6;
+}
+
+#workspace-tree {
+    height: 1fr;
+    background: #151719;
+}
+
+#help-card {
+    padding: 1 2;
+    color: #c7c0b8;
+}
+
+.danger { color: #ef6f6c; }
 
 ModalScreen {
     align: center middle;
-    background: #020617 72%;
+    background: #070809 76%;
 }
 
 .dialog {
@@ -74,8 +171,14 @@ ModalScreen {
     height: auto;
     max-height: 30;
     padding: 1 2;
-    border: round #f59e0b;
-    background: #111827;
+    border: round #f4bf75;
+    background: #1a1c1e;
+}
+
+.dialog-title {
+    height: 1;
+    color: #f4bf75;
+    text-style: bold;
 }
 
 .dialog-actions {

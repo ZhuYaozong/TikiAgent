@@ -166,6 +166,9 @@ def test_research_only_must_pass_verification_gate() -> None:
     assert research_gate.calls == 1
     assert code_gate.calls == 0
     assert state["specialist_verifications"]["research_agent"].passed
+    assert "## 调研总结" in state["final_result"]
+    assert "https://example.com/source" in state["final_result"]
+    assert "Todo Result" not in state["final_result"]
     assert research.contexts[0].agent == "research_agent"
     assert all(
         item.owner == "research_agent"
@@ -208,6 +211,9 @@ def test_hybrid_passes_gate_after_each_specialist() -> None:
         item.status == "completed"
         for item in state["task_board"].items.values()
     )
+    assert "## 调研总结" in state["final_result"]
+    assert "## 执行结果" in state["final_result"]
+    assert "comparison.html" in state["final_result"]
 
 
 def test_explicit_session_result_reaches_specialist_without_old_messages() -> None:

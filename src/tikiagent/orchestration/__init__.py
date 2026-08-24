@@ -1,5 +1,6 @@
 """TikiAgent 工作流状态与图编排。"""
 
+from tikiagent.orchestration.completion import compose_final_answer
 from tikiagent.orchestration.models import (
     ActorResult,
     CodeResult,
@@ -52,4 +53,5 @@ __all__ = [
     "create_initial_state",
     "create_multi_agent_state",
     "create_plan_verify_state",
+    "compose_final_answer",
 ]

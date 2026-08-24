@@ -10,11 +10,12 @@ import threading
 from typing import Any
 from uuid import uuid4
 
+from rich.table import Table
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, Input, RichLog, Static, TabbedContent, TabPane, Tree
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.widgets import Collapsible, Footer, Input, Markdown, Static, TabbedContent, TabPane, Tree
 
 from tikiagent.application.events import EventBus
 from tikiagent.tui.adapter import TuiEventAdapter
@@ -22,7 +23,7 @@ from tikiagent.tui.backend import TuiBackend, build_backend
 from tikiagent.tui.commands import TuiCommand, parse_command
 from tikiagent.tui.messages import OperationFailed, OperationFinished, TuiEventReceived, WorkspaceSnapshotReceived
 from tikiagent.tui.modals import ApprovalModal, ApprovalPrompt, QuitWarningModal, ReconcileDraft, ReconcileModal, RecoveryModal, RecoverySubmission
-from tikiagent.tui.models import TuiViewState
+from tikiagent.tui.models import FeedItem, TranscriptItem, TuiViewState
 from tikiagent.tui.sink import TextualEventSink
 from tikiagent.tui.workspace import ReadOnlyWorkspaceSnapshotter
 
@@ -41,11 +42,12 @@ class TikiTuiApp(App[None]):
     """所有 Widget 更新都发生在 Textual 主线程。"""
 
     TITLE = "TikiAgent"
-    SUB_TITLE = "Multi-Agent Task Execution System · v0.8"
+    SUB_TITLE = "Multi-Agent Task Execution System · v0.9.1"
     CSS_PATH = "styles.tcss"
     BINDINGS = [
         ("ctrl+q", "quit", "退出"),
         ("ctrl+n", "new_session", "新会话"),
+        ("ctrl+b", "toggle_sidebar", "侧栏"),
         ("a", "show_approval", "审批"),
         ("r", "show_recovery", "恢复"),
         ("f5", "refresh_workspace", "刷新目录"),
@@ -73,6 +75,9 @@ class TikiTuiApp(App[None]):
         self.visible_approval: ApprovalPrompt | None = None
         self.quit_warning_count = 0
         self.resume_submission_count = 0
+        self._rendered_stream_id: str | None = None
+        self._rendered_transcript: tuple[TranscriptItem, ...] = ()
+        self._rendered_feed_count = 0
         self.event_bus = EventBus()
         self.event_bus.subscribe(TextualEventSink(self.post_message))
         factory = backend_factory or (
@@ -82,24 +87,27 @@ class TikiTuiApp(App[None]):
         self.workspace = ReadOnlyWorkspaceSnapshotter(self.data_dir)
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
-        with Horizontal(id="body"):
-            with Vertical(id="main-panel"):
-                yield Static("LIVE EVENT TIMELINE", classes="panel-title")
-                yield RichLog(id="timeline", wrap=True, markup=False)
-                yield Static(id="answer-card")
-            with TabbedContent(id="side-panel"):
-                with TabPane("Status", id="status-tab"):
-                    yield Static(id="session-card", classes="status-card")
-                    yield Static(id="workflow-card", classes="status-card")
-                    yield Static(id="runtime-card", classes="status-card")
-                with TabPane("Workspace", id="workspace-tab"):
-                    yield Static("只读视图 · F5 刷新", classes="muted")
-                    yield Tree("Workspace", id="workspace-tree")
-                with TabPane("Help", id="help-tab"):
-                    yield Static(self._help_text(), id="help-card")
-        yield Static(id="notice-bar")
-        yield Input(placeholder="正在初始化 Session…", id="prompt", disabled=True)
+        with Vertical(id="root"):
+            with Horizontal(id="top-bar"):
+                yield Static("◆ TikiAgent", id="brand")
+                yield Static("starting", id="top-status")
+            with Horizontal(id="body"):
+                with Vertical(id="main-panel"):
+                    yield VerticalScroll(id="feed")
+                with TabbedContent(id="side-panel"):
+                    with TabPane("Status", id="status-tab"):
+                        yield Static(id="session-card", classes="status-card")
+                        yield Static(id="workflow-card", classes="status-card")
+                        yield Static(id="runtime-card", classes="status-card")
+                    with TabPane("Workspace", id="workspace-tab"):
+                        yield Static("只读视图 · F5 刷新", classes="muted")
+                        yield Tree("Workspace", id="workspace-tree")
+                    with TabPane("Help", id="help-tab"):
+                        yield Static(self._help_text(), id="help-card")
+            with Horizontal(id="input-row"):
+                yield Static("❯", id="prompt-mark")
+                yield Input(placeholder="正在初始化 Session…", id="prompt", disabled=True)
+                yield Static("Enter 发送 · /help 命令", id="input-hint")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -328,6 +336,10 @@ class TikiTuiApp(App[None]):
     def action_refresh_workspace(self) -> None:
         self.refresh_workspace()
 
+    def action_toggle_sidebar(self) -> None:
+        side = self.query_one("#side-panel", TabbedContent)
+        side.display = not side.display
+
     def action_quit(self) -> None:
         active = self.operation_in_flight is not None or self.view_state.busy or self.view_state.status in {"running", "executing"}
         if not active:
@@ -346,33 +358,138 @@ class TikiTuiApp(App[None]):
         if not self.is_mounted:
             return
         state = self.view_state
-        log = self.query_one("#timeline", RichLog)
-        log.clear()
-        for item in state.transcript:
-            color = "#f8fafc" if item.role == "user" else "#86efac"
-            log.write(Text.assemble((f"HISTORY {item.role.upper():<9}", f"bold {color}"), item.content))
-        colors = {"user": "#f8fafc", "routing": "#c4b5fd", "agent": "#7dd3fc",
-                  "tool": "#fbbf24", "approval": "#fb7185", "verification": "#86efac",
-                  "system": "#94a3b8", "final": "#4ade80"}
-        for item in state.timeline:
-            line = Text(f"{item.sequence:03d}  ", style="dim")
-            line.append(f"{item.title:<25}", style=f"bold {colors[item.kind]}")
-            line.append(item.detail)
-            log.write(line)
-        self.query_one("#session-card", Static).update(
-            f"Session\n{state.session_id or '-'}\n\nWorkspace\n{state.workspace_id or '-'}\n\nTask\n{state.task_id or '-'}")
-        self.query_one("#workflow-card", Static).update(
-            f"Status       {state.status}\nAgent        {state.current_agent}\nVerification {state.verification}\nBusy         {state.busy}")
-        self.query_one("#runtime-card", Static).update(
-            f"Checkpoint {state.checkpoint_id or '-'}\nRevision   {state.checkpoint_revision or '-'}\n"
-            f"Execution  {state.execution_id or '-'}\nAttempt    {state.attempt or '-'}\n"
-            f"Tool       {state.tool_name or '-'}\nCalls      {state.tool_calls}")
-        answer = self.query_one("#answer-card", Static)
-        answer.update(state.final_answer or "")
-        answer.display = bool(state.final_answer)
-        notice = state.error or state.notice or "Ready"
-        self.query_one("#notice-bar", Static).update(notice)
+        self._sync_feed(state)
+        self.query_one("#session-card", Static).update(self._session_table(state))
+        self.query_one("#workflow-card", Static).update(self._workflow_table(state))
+        runtime = self.query_one("#runtime-card", Static)
+        runtime.update(self._runtime_table(state))
+        runtime.display = any(
+            (state.checkpoint_id, state.execution_id, state.tool_name, state.approvals)
+        )
+        notice = state.error or state.notice or state.status
+        notice_line = next((line for line in notice.splitlines() if line.strip()), "ready")
+        status = f"{state.current_agent if state.busy else state.status} · {notice_line}"
+        self.query_one("#top-status", Static).update(_shorten(status, 110))
         self._render_workspace()
+
+    def _sync_feed(self, state: TuiViewState) -> None:
+        feed = self.query_one("#feed", VerticalScroll)
+        reset = (
+            state.stream_id != self._rendered_stream_id
+            or state.transcript != self._rendered_transcript
+            or len(state.feed) < self._rendered_feed_count
+        )
+        if reset:
+            feed.remove_children()
+            self._mount_welcome(feed)
+            for item in state.transcript:
+                self._mount_transcript(feed, item)
+            self._rendered_stream_id = state.stream_id
+            self._rendered_transcript = state.transcript
+            self._rendered_feed_count = 0
+        for item in state.feed[self._rendered_feed_count :]:
+            self._mount_feed_item(feed, item)
+        self._rendered_feed_count = len(state.feed)
+        feed.scroll_end(animate=False)
+
+    @staticmethod
+    def _mount_welcome(feed: VerticalScroll) -> None:
+        feed.mount(
+            Vertical(
+                Static(Text("◆ TikiAgent", style="bold #7fd6c2")),
+                Static("输入问题、调研或代码任务；执行细节会保持紧凑并可展开。"),
+                classes="feed-card feed-welcome",
+            )
+        )
+
+    def _mount_transcript(self, feed: VerticalScroll, item: TranscriptItem) -> None:
+        kind = "user" if item.role == "user" else "assistant"
+        self._mount_message(feed, kind, "You" if kind == "user" else "TikiAgent", item.content)
+
+    def _mount_feed_item(self, feed: VerticalScroll, item: FeedItem) -> None:
+        if item.kind in {"user", "assistant"}:
+            self._mount_message(
+                feed,
+                item.kind,
+                item.title,
+                item.detail or item.summary,
+            )
+            return
+        marker = {
+            "routing": "◇",
+            "agent": "●",
+            "tool": "└",
+            "approval": "!",
+            "verification": "✓",
+            "error": "×",
+            "system": "·",
+        }[item.kind]
+        title = f"{marker} {item.title}"
+        summary = Static(Text(item.summary, style=_feed_color(item.kind)), classes="feed-summary")
+        if item.detail:
+            card = Collapsible(
+                summary,
+                Static(Text(item.detail), classes="feed-detail"),
+                title=title,
+                collapsed=item.collapsed,
+                classes=f"feed-card feed-{item.kind}",
+            )
+        else:
+            card = Vertical(
+                Static(Text(title, style=f"bold {_feed_color(item.kind)}")),
+                summary,
+                classes=f"feed-card feed-{item.kind}",
+            )
+        feed.mount(card)
+
+    @staticmethod
+    def _mount_message(
+        feed: VerticalScroll,
+        kind: str,
+        title: str,
+        content: str,
+    ) -> None:
+        body = Markdown(content) if kind == "assistant" else Static(Text(content))
+        feed.mount(
+            Vertical(
+                Static(Text(title, style=f"bold {_feed_color(kind)}")),
+                body,
+                classes=f"feed-card feed-{kind}",
+            )
+        )
+
+    @staticmethod
+    def _session_table(state: TuiViewState) -> Table:
+        table = Table.grid(padding=(0, 1))
+        table.add_column(style="bold #7fd6c2", no_wrap=True)
+        table.add_column()
+        table.add_row("session", _short_id(state.session_id))
+        table.add_row("workspace", state.workspace_id or "-")
+        table.add_row("task", _short_id(state.task_id))
+        return table
+
+    @staticmethod
+    def _workflow_table(state: TuiViewState) -> Table:
+        table = Table.grid(padding=(0, 1))
+        table.add_column(style="bold #f4bf75", no_wrap=True)
+        table.add_column()
+        table.add_row("status", state.status)
+        table.add_row("agent", state.current_agent)
+        table.add_row("verify", state.verification)
+        table.add_row("tools", str(state.tool_calls))
+        return table
+
+    @staticmethod
+    def _runtime_table(state: TuiViewState) -> Table:
+        table = Table.grid(padding=(0, 1))
+        table.add_column(style="bold #ef9f76", no_wrap=True)
+        table.add_column()
+        table.add_row("checkpoint", _short_id(state.checkpoint_id))
+        table.add_row("revision", str(state.checkpoint_revision or "-"))
+        table.add_row("execution", _short_id(state.execution_id))
+        table.add_row("tool", state.tool_name or "-")
+        table.add_row("approvals", str(state.approvals))
+        return table
 
     def _render_workspace(self) -> None:
         if not self.is_mounted:
@@ -420,6 +537,7 @@ class TikiTuiApp(App[None]):
 /approval        重新打开审批窗口
 /recovery        打开人工恢复窗口
 /workspace       刷新只读 Workspace Tree
+Ctrl+B           显示或隐藏侧栏
 /help            显示帮助
 /quit            关闭 TUI（不取消 Workflow）"""
 
@@ -431,6 +549,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace-id", default="default-workspace")
     parser.add_argument("--session-id")
     return parser
+
+
+def _short_id(value: str | None, limit: int = 12) -> str:
+    if not value:
+        return "-"
+    return value if len(value) <= limit else value[:limit] + "…"
+
+
+def _shorten(value: str, limit: int) -> str:
+    return value if len(value) <= limit else value[: limit - 1] + "…"
+
+
+def _feed_color(kind: str) -> str:
+    return {
+        "user": "#f4bf75",
+        "assistant": "#7fd6c2",
+        "routing": "#b9a7e6",
+        "agent": "#7fd6c2",
+        "tool": "#f4bf75",
+        "approval": "#ef9f76",
+        "verification": "#7fd68a",
+        "error": "#ef6f6c",
+        "system": "#9aa4a6",
+    }.get(kind, "#d7d1c9")
 
 
 def main(argv: list[str] | None = None) -> int:

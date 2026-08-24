@@ -2,7 +2,7 @@
 
 TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。它使用 Supervisor 根据任务动态调度 ResearchAgent 和 CodeAgent，通过统一 Verification Gate 验证每次 Specialist 交付，再由 Supervisor 决定继续委派或结束。Context Engine 根据当前 Agent、任务阶段和显式引用重新构建 Base Context，避免 Specialist 直接继承全部历史。
 
-当前版本为 **v0.9.0 Demo Validation**。
+当前版本为 **v0.9.1 Conversation-first TUI**。
 
 ## v0.5 Context-aware Multi-Agent 架构
 
@@ -368,7 +368,7 @@ HarnessAdapter        → tool request / approval / execution / result / recover
 
 Controller 不根据最终结果反推 Tool 或 Approval 事件；Harness 生命周期观察接口只转发真实发生的执行事实。Event Stream 用于 UI/CLI 展示，不是 Trace，也不是 Resume source of truth。
 
-## v0.8 Textual TUI
+## v0.9c Conversation-first Textual TUI
 
 正式 TUI 复用 v0.7 Application Plane，不在 Widget 中重新实现 Workflow：
 
@@ -382,7 +382,7 @@ ApplicationController / Workflow / Harness
 ────────────────────────────────────
           Textual UI 主线程
                    ↓
-          TuiEventAdapter
+      TuiEventAdapter / Presenter
                    ↓
            TuiViewState
                    ↓
@@ -391,7 +391,11 @@ ApplicationController / Workflow / Harness
 
 `TuiViewState` 是可丢弃的显示投影，不是 Session、Checkpoint、Approval Ledger 或恢复事实。Widget 只读取投影字段；同步 Controller、Session Store 和只读 Workspace 扫描均在线程 Worker 中执行。Worker 禁止直接更新 Widget，统一发送 Textual Message 回主线程。
 
-界面包括实时事件时间线、历史对话、Session/Workflow/Runtime 状态、最终回答和只读 Workspace Tree。支持：
+界面以用户对话和最终回答为主，Supervisor、Agent、Tool 与 Verification 事件被投影为紧凑 Feed Card；有安全摘要的执行详情可以展开。长回答使用 Markdown 完整滚动显示，不再被固定高度截断。侧栏只保留 Session/Workflow/Runtime 和只读 Workspace，并可通过 `Ctrl+B` 隐藏。
+
+Workflow 完成后，`FinalAnswerComposer` 从每个必要 Specialist 的最新且匹配 PASS 的结构化 Result 生成用户回答：Research 展示 summary、findings 和来源 URL，Code 展示交付文件和测试。内部 todo/result/handoff/verification ID 不再作为最终答案。
+
+支持：
 
 ```text
 /new [workspace]  新建 Session
@@ -400,6 +404,7 @@ ApplicationController / Workflow / Harness
 /approval        重新打开审批窗口
 /recovery        打开人工恢复窗口
 /workspace       刷新只读 Workspace Tree
+Ctrl+B           显示或隐藏侧栏
 /help            显示帮助
 /quit            关闭 TUI，不取消 Workflow
 ```
@@ -876,10 +881,12 @@ src/tikiagent/
 │   ├── messages.py
 │   ├── modals.py
 │   ├── models.py
+│   ├── presenter.py
 │   ├── sink.py
 │   ├── styles.tcss
 │   └── workspace.py
 └── orchestration/
+    ├── completion.py
     ├── models.py
     ├── multi_agent.py
     ├── plan_verify.py
@@ -896,6 +903,7 @@ src/tikiagent/
 - 每个 Specialist 后都经过 Verification Gate；
 - Handoff、Result 和 Verification ID 关联；
 - 旧 PASS 不能验证新 Result；
+- Research / Coding / Hybrid 最终回答只展示最新 PASS Result，不暴露内部 ID；
 - Research 来源 allowlist 与 Observation provenance；
 - Verifier FAIL 后返回 Supervisor；
 - `max_delegations`、Agent `max_steps` 和 LangGraph `recursion_limit`；
@@ -929,6 +937,7 @@ src/tikiagent/
 - CLI 无模型配置创建 Session，以及真实 resume/recover/reconcile 参数入口；
 - Artifact-aware Python unittest、HTML 结构、缺失/空文件和 Hybrid 来源引用；
 - TUI Event → Adapter → ViewState 纯显示投影和 stream 顺序保护；
+- conversation-first Feed、折叠执行卡片、长 Markdown 回答和固定输入栏；
 - Controller Worker → Textual Message → UI 主线程更新边界；
 - Approval 防重复提交、Recovery → Reconcile 和执行期退出提示；
 - Session 连接、多轮 transcript 与只读 Workspace Tree；
@@ -984,6 +993,7 @@ src/tikiagent/
 - [x] v0.8 Textual TUI：实时事件、多轮 Session、审批/恢复 Modal、只读 Workspace Tree；
 - [x] v0.9a Artifact-aware Verification：Python unittest、HTML 结构、Artifact 与来源验证；
 - [x] v0.9b Demo Validation：Research / Coding / Hybrid 三个主 Demo与 Application/Trace 双视图；
+- [x] v0.9c Conversation-first TUI：用户可读最终回答、Markdown 对话、紧凑执行 Feed 与可隐藏侧栏；
 - [ ] v1.0 README、架构材料、演示录制与面试答辩。
 
 ## v1 目标 Demo
