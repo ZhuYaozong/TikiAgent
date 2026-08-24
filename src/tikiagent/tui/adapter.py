@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from tikiagent.application.models import ApplicationEvent, ApplicationOutcome
-from tikiagent.tui.models import SessionSnapshot, TimelineItem, TimelineKind, TuiViewState, WorkspaceEntry
+from tikiagent.tui.models import (
+    FeedItem,
+    SessionSnapshot,
+    TimelineItem,
+    TimelineKind,
+    TuiViewState,
+    WorkspaceEntry,
+)
 from tikiagent.tui.presenter import TuiEventPresenter
 
 
@@ -82,7 +89,22 @@ class TuiEventAdapter:
 
     @staticmethod
     def with_error(state: TuiViewState, message: str) -> TuiViewState:
-        return state.model_copy(update={"busy": False, "error": message, "notice": message})
+        error_item = FeedItem(
+            sequence=max(1, state.last_sequence + 1),
+            kind="error",
+            title="Operation Failed",
+            summary=message,
+            detail=message,
+            collapsed=False,
+        )
+        return state.model_copy(
+            update={
+                "busy": False,
+                "error": message,
+                "notice": message,
+                "feed": (*state.feed, error_item)[-300:],
+            }
+        )
 
     @staticmethod
     def _event_updates(state: TuiViewState, event: ApplicationEvent) -> dict[str, object]:

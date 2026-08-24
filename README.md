@@ -393,7 +393,7 @@ ApplicationController / Workflow / Harness
 
 界面以用户对话和最终回答为主，Supervisor、Agent、Tool 与 Verification 事件被投影为紧凑 Feed Card；有安全摘要的执行详情可以展开。长回答使用 Markdown 完整滚动显示，不再被固定高度截断。侧栏只保留 Session/Workflow/Runtime 和只读 Workspace，并可通过 `Ctrl+B` 隐藏。
 
-Workflow 完成后，`FinalAnswerComposer` 从每个必要 Specialist 的最新且匹配 PASS 的结构化 Result 生成用户回答：Research 展示 summary、findings 和来源 URL，Code 展示交付文件和测试。内部 todo/result/handoff/verification ID 不再作为最终答案。
+Workflow 完成后，`FinalAnswerComposer` 从每个必要 Specialist 的最新且匹配 PASS 的结构化 Result 生成用户回答：Research 展示 summary、findings 和来源 URL，Code 展示交付文件和测试。内部 todo/result/handoff/verification ID 不再作为最终答案。最终回答具有独立长度预算，完整网页摘录继续留在 History 的 ResearchResult 证据中，避免超长来源正文导致 Finalization 失败。
 
 支持：
 

@@ -110,6 +110,16 @@ def test_outcome_projection_keeps_checkpoint_fields_without_becoming_authority()
     assert active.busy is False
 
 
+def test_operation_error_is_visible_in_conversation_feed() -> None:
+    adapter = TuiEventAdapter()
+    state = adapter.with_error(TuiViewState(last_sequence=7), "ValidationError: 回答过长")
+
+    assert state.busy is False
+    assert state.feed[-1].kind == "error"
+    assert state.feed[-1].title == "Operation Failed"
+    assert "回答过长" in state.feed[-1].detail
+
+
 def test_slash_commands_are_strict_and_normal_text_is_not_a_command() -> None:
     assert parse_command("创建网页") is None
     assert parse_command('/new "demo workspace"').argument == "demo workspace"
