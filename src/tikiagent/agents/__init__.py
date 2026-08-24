@@ -14,6 +14,7 @@ from tikiagent.agents.resumable import (
 )
 from tikiagent.agents.supervisor import SupervisorAgent
 from tikiagent.agents.verifier import (
+    ArtifactAwareCodeVerifier,
     CodeEnvironmentVerifier,
     CommandCheck,
     EnvironmentVerifier,
@@ -23,6 +24,7 @@ from tikiagent.agents.verifier import (
 __all__ = [
     "AgentRunResult",
     "AgentRunPause",
+    "ArtifactAwareCodeVerifier",
     "CommandCheck",
     "CodeEnvironmentVerifier",
     "EnvironmentVerifier",

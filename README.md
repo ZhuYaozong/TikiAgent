@@ -2,7 +2,7 @@
 
 TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。它使用 Supervisor 根据任务动态调度 ResearchAgent 和 CodeAgent，通过统一 Verification Gate 验证每次 Specialist 交付，再由 Supervisor 决定继续委派或结束。Context Engine 根据当前 Agent、任务阶段和显式引用重新构建 Base Context，避免 Specialist 直接继承全部历史。
 
-当前版本为 **v0.8.0 Textual TUI / Application / Session / Event Stream / CLI**。
+当前版本为 **v0.9.0a1 Artifact-aware Verification**。
 
 ## v0.5 Context-aware Multi-Agent 架构
 
@@ -408,6 +408,30 @@ Approval Modal 只把一次用户决定提交给 `ApplicationController.resume()
 
 Workspace Tree 只返回受 Session 目录约束的文件名、相对路径和类型，不提供打开、编辑或删除 API，也不会跟随符号链接逃出 Workspace。`Ctrl+Q` 只关闭 UI；执行期间退出会明确提示未取消的 Workflow 可能需要恢复。
 
+## v0.9a Artifact-aware Verification
+
+正式 Runtime 不再把 Code 验证固定为 `comparison.html`。`ArtifactAwareCodeVerifier` 根据当前 `CodeResult.changed_files` 的真实文件类型选择确定性检查：
+
+```text
+CodeResult + Handoff identity
+             ↓
+       changed_files 非空
+             ↓
+只读 Harness 逐个确认文件存在且非空
+             ↓
+      Artifact 类型检查
+      ├── Python → 必须有测试文件
+      │            + 固定 unittest discover
+      ├── HTML   → HTMLParser 检查
+      │            html/head/title/body
+      └── 其他   → 存在且非空
+             ↓
+若存在 ResearchResult
+→ 检查真实来源 URL 是否进入本轮交付文件
+```
+
+Verifier 的 Registry 仍不含 `write_file` 或 `edit_file`。Python 测试只允许应用预配置的精确 argv，通过 `FixedCommandPermissionPolicy` 后由 Harness 执行；Verifier 不运行模型临时生成的检查命令。旧 `CodeEnvironmentVerifier` 保留给早期 Baseline 和已有测试，正式 Runtime 使用 Artifact-aware 实现。
+
 ## Result 与 Verification 身份链
 
 每次委派、交付和验证都通过 ID 明确关联：
@@ -438,7 +462,7 @@ and report.subject_agent == specialist
 - **MultiAgentCodeAgent**：执行结构化 Handoff，只接收 `context_refs` 指定的信息，输出 `CodeResult`；
 - **VerificationGate**：选择验证策略，并强制检查 Handoff、Result 和 Verification 的 ID 关联；
 - **ResearchResultVerifier**：检查 findings、query、来源数量以及 URL 与 Web Observation 的对应关系；
-- **CodeEnvironmentVerifier**：检查本轮产物归属、固定命令结果和 Hybrid 来源引用；
+- **ArtifactAwareCodeVerifier**：通过只读 Harness 检查本轮 Artifact，并按 Python/HTML 类型执行确定性验证；
 - **HistoryStore**：保存未来 Agent 可复用的 Handoff、Result 和 Verification，不保存完整执行 Trace；
 - **Retriever**：按 Profile 执行 exact → keyword → recent 检索；
 - **ContextBuilder**：把任务、验收标准、Task Board 和相关 History 组装为 Base Context；
@@ -860,6 +884,7 @@ src/tikiagent/
 - EventBus stream sequence、Secret 脱敏、截断和 Sink 故障隔离；
 - Workflow/Harness 事实由各自 Adapter 发布，不由 Controller 反推；
 - CLI 无模型配置创建 Session，以及真实 resume/recover/reconcile 参数入口；
+- Artifact-aware Python unittest、HTML 结构、缺失/空文件和 Hybrid 来源引用；
 - TUI Event → Adapter → ViewState 纯显示投影和 stream 顺序保护；
 - Controller Worker → Textual Message → UI 主线程更新边界；
 - Approval 防重复提交、Recovery → Reconcile 和执行期退出提示；
@@ -884,7 +909,8 @@ src/tikiagent/
 - JSONL Checkpoint/History 适合单机 v1，不提供多进程文件锁或分布式 exactly-once；
 - Trace 是 best effort，崩溃前最后几条事件可能缺失，但不会改变 Checkpoint 恢复语义；
 - `recent_events` 仍是 Graph 内的有界调试缓存；Application Event Stream 与 Trace 独立，不从 Trace 推断实时语义；
-- Runtime 的 Code Environment Verifier 暂时沿用主 Hybrid Demo 的 `comparison.html` 契约；通用动态验收配置尚未实现；
+- Artifact-aware Verifier 第一版识别 Python、HTML 和普通文本；尚未探测任意语言的构建系统；
+- Python Artifact 当前固定使用标准库 `unittest discover`，不自动安装或选择 pytest；
 - TUI 重启后通过 Session 与权威 Checkpoint 恢复当前状态，不从 Trace 重放完整历史事件时间线；
 - Python 线程 Worker 无法安全强杀正在运行的同步 handler，因此执行期退出只提示恢复风险，不承诺取消 Workflow；
 - Workspace Tree 第一版只读，不提供文件内容预览或编辑；
@@ -909,7 +935,8 @@ src/tikiagent/
 - [x] v0.6a2 Persist / Observe：双快照 Checkpoint、Graph Resume、Trace、持久化 History 与 Agent Runtime；
 - [x] v0.7 Application：Session、Turn、Intent Router、Event Stream、CLI 与恢复入口；
 - [x] v0.8 Textual TUI：实时事件、多轮 Session、审批/恢复 Modal、只读 Workspace Tree；
-- [ ] v0.9 Demo Validation：Research / Coding / Hybrid 三个主 Demo 与 Trace 总结；
+- [x] v0.9a Artifact-aware Verification：Python unittest、HTML 结构、Artifact 与来源验证；
+- [ ] v0.9b Demo Validation：Research / Coding / Hybrid 三个主 Demo 与 Trace 总结；
 - [ ] v1.0 README、架构材料、演示录制与面试答辩。
 
 ## v1 目标 Demo
