@@ -60,6 +60,10 @@ CodeResult
 
 Composer 会再次检查 Result 与 Verification 的 `result_id/handoff_id/subject_agent` 关联，但不会把这些内部 ID 输出给用户。第一版不额外调用 LLM 润色，避免额外成本和来源幻觉。
 
+最终回答受独立长度预算约束，保证能够安全写入 Final History。ResearchAgent 抓取的完整网页摘录继续作为结构化 Result 证据保存在任务 History 中；用户回答只展示经过整理的总结、关键发现、来源标题和 URL，避免长网页正文阻塞 Workflow 收尾。
+
+如果 Worker 仍遇到未处理异常，TUI 会把错误作为 `Operation Failed` 卡片显示在主 Feed，而不是只在顶部短暂显示或静默停止。
+
 ## 快捷键与命令
 
 ```text
