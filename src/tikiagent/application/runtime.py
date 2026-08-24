@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 from tikiagent.agents import (
-    CodeEnvironmentVerifier,
+    ArtifactAwareCodeVerifier,
     CommandCheck,
     MultiAgentCodeAgent,
     ResearchAgent,
@@ -55,28 +55,6 @@ CODE_SYSTEM_PROMPT = """你是 TikiAgent CodeAgent。
 不得访问 Workspace 外路径；完成后重新读取文件或运行测试。
 最终是否通过由独立 Verification Gate 决定。
 """
-
-
-HTML_CHECK = """
-from html.parser import HTMLParser
-from pathlib import Path
-
-path = Path('comparison.html')
-if not path.is_file():
-    raise SystemExit('comparison.html missing')
-class Checker(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.tags = set()
-    def handle_starttag(self, tag, attrs):
-        self.tags.add(tag)
-checker = Checker()
-checker.feed(path.read_text(encoding='utf-8'))
-missing = sorted({'html', 'head', 'title', 'body'} - checker.tags)
-if missing:
-    raise SystemExit('missing tags: ' + ','.join(missing))
-print('html structure ok')
-""".strip()
 
 
 class LazyOpenAICompatibleClient:
@@ -200,14 +178,25 @@ class ApplicationRuntimeFactory:
             )
         )
 
-        # v0.8 保持已有主 Demo 验证契约；自动 Evaluation 不在当前版本范围。
+        # Verifier 使用 Artifact 类型选择确定性检查，不执行模型生成的验证命令。
         verifier_registry = build_read_only_file_registry(workspace)
         register_command_tool(verifier_registry, workspace)
         verifier_dispatcher = Dispatcher(verifier_registry)
-        command = (sys.executable, "-B", "-c", HTML_CHECK)
+        command = (
+            sys.executable,
+            "-B",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            ".",
+            "-p",
+            "test_*.py",
+            "-v",
+        )
         gate = VerificationGate(
             research_verifier=ResearchResultVerifier(min_sources=1),
-            code_verifier=CodeEnvironmentVerifier(
+            code_verifier=ArtifactAwareCodeVerifier(
                 dispatcher=verifier_dispatcher,
                 execution_harness=ExecutionHarness(
                     verifier_dispatcher,
@@ -215,8 +204,7 @@ class ApplicationRuntimeFactory:
                         allowed_commands={command}
                     ),
                 ),
-                checks=(CommandCheck(name="html-structure", command=command),),
-                expected_files=("comparison.html",),
+                python_test_check=CommandCheck(name="python-unittest", command=command),
             ),
         )
         return MultiAgentWorkflow(
