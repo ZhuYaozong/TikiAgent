@@ -283,6 +283,7 @@ class TikiWorkflowAdapter:
                 source="workflow_adapter",
                 correlation_id=correlation_id,
                 message=f"进入 {current['current_agent']}",
+                data={"agent": current["current_agent"]},
             )
         decision = current["supervisor_decision"]
         old_decision = previous["supervisor_decision"] if previous else None

@@ -2,7 +2,7 @@
 
 TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。它使用 Supervisor 根据任务动态调度 ResearchAgent 和 CodeAgent，通过统一 Verification Gate 验证每次 Specialist 交付，再由 Supervisor 决定继续委派或结束。Context Engine 根据当前 Agent、任务阶段和显式引用重新构建 Base Context，避免 Specialist 直接继承全部历史。
 
-当前版本为 **v0.7.0 Application / Session / Event Stream / CLI**。
+当前版本为 **v0.8.0 Textual TUI / Application / Session / Event Stream / CLI**。
 
 ## v0.5 Context-aware Multi-Agent 架构
 
@@ -368,6 +368,46 @@ HarnessAdapter        → tool request / approval / execution / result / recover
 
 Controller 不根据最终结果反推 Tool 或 Approval 事件；Harness 生命周期观察接口只转发真实发生的执行事实。Event Stream 用于 UI/CLI 展示，不是 Trace，也不是 Resume source of truth。
 
+## v0.8 Textual TUI
+
+正式 TUI 复用 v0.7 Application Plane，不在 Widget 中重新实现 Workflow：
+
+```text
+ApplicationController / Workflow / Harness
+                   ↓
+              EventBus
+                   ↓
+            TextualEventSink
+                   ↓ post_message()
+────────────────────────────────────
+          Textual UI 主线程
+                   ↓
+          TuiEventAdapter
+                   ↓
+           TuiViewState
+                   ↓
+                Widgets
+```
+
+`TuiViewState` 是可丢弃的显示投影，不是 Session、Checkpoint、Approval Ledger 或恢复事实。Widget 只读取投影字段；同步 Controller、Session Store 和只读 Workspace 扫描均在线程 Worker 中执行。Worker 禁止直接更新 Widget，统一发送 Textual Message 回主线程。
+
+界面包括实时事件时间线、历史对话、Session/Workflow/Runtime 状态、最终回答和只读 Workspace Tree。支持：
+
+```text
+/new [workspace]  新建 Session
+/session <id>    连接已有 Session
+/status          读取权威 Checkpoint 状态
+/approval        重新打开审批窗口
+/recovery        打开人工恢复窗口
+/workspace       刷新只读 Workspace Tree
+/help            显示帮助
+/quit            关闭 TUI，不取消 Workflow
+```
+
+Approval Modal 只把一次用户决定提交给 `ApplicationController.resume()`；Scope、request ID、fingerprint 和 revision 仍由权威 Checkpoint/Harness 校验。`confirmed_executed` 会进入 Reconcile Modal，必须加载真实 `ReconcileSubmission` JSON，不能由 UI 伪造 ToolResult。
+
+Workspace Tree 只返回受 Session 目录约束的文件名、相对路径和类型，不提供打开、编辑或删除 API，也不会跟随符号链接逃出 Workspace。`Ctrl+Q` 只关闭 UI；执行期间退出会明确提示未取消的 Workflow 可能需要恢复。
+
 ## Result 与 Verification 身份链
 
 每次委派、交付和验证都通过 ID 明确关联：
@@ -597,6 +637,17 @@ uv run --locked tikiagent submit `
 uv run --locked tikiagent status --session-id <SESSION_ID>
 ```
 
+启动 Textual TUI：
+
+```powershell
+uv run --locked tikiagent-tui --data-dir .tiki --env-file .env
+
+# 连接已有 Session，并从权威 Checkpoint 读取当前状态
+uv run --locked tikiagent-tui --data-dir .tiki --session-id <SESSION_ID>
+```
+
+创建 Session 和查看本地状态不需要 API Key；真正提交 CHAT/WORKFLOW 时才会懒加载模型配置。
+
 Approval 和未知副作用恢复都必须携带权威 Checkpoint 的 revision 以及绑定 ID：
 
 ```powershell
@@ -689,7 +740,7 @@ Supervisor ToolCall → call_research_agent → ResearchAgent.run()
 
 ## Baselines
 
-已有工作流继续作为后续 Evaluation 的可运行 baseline：
+已有工作流继续作为架构演进的可运行 baseline：
 
 ```powershell
 uv run python examples/react_file_repair.py
@@ -697,7 +748,7 @@ uv run python examples/langgraph_react.py
 uv run python examples/plan_verify_repair.py
 ```
 
-正式代码使用语义名称 `react_graph.py`、`plan_verify.py` 和 `multi_agent.py`，不会增加 `workflow_v4.py`、`workflow_final.py` 等版本化文件。Git 历史和后续 `benchmarks/baselines/` 负责保存架构演进与消融基线。
+正式代码使用语义名称 `react_graph.py`、`plan_verify.py` 和 `multi_agent.py`，不会增加 `workflow_v4.py`、`workflow_final.py` 等版本化文件。当前版本不实现自动 Evaluation 框架，也不声明未经实验支持的量化收益。
 
 ## 项目结构
 
@@ -750,6 +801,17 @@ src/tikiagent/
 │   ├── models.py
 │   ├── openai_compatible.py
 │   └── structured_output.py
+├── tui/
+│   ├── adapter.py
+│   ├── app.py
+│   ├── backend.py
+│   ├── commands.py
+│   ├── messages.py
+│   ├── modals.py
+│   ├── models.py
+│   ├── sink.py
+│   ├── styles.tcss
+│   └── workspace.py
 └── orchestration/
     ├── models.py
     ├── multi_agent.py
@@ -798,6 +860,10 @@ src/tikiagent/
 - EventBus stream sequence、Secret 脱敏、截断和 Sink 故障隔离；
 - Workflow/Harness 事实由各自 Adapter 发布，不由 Controller 反推；
 - CLI 无模型配置创建 Session，以及真实 resume/recover/reconcile 参数入口；
+- TUI Event → Adapter → ViewState 纯显示投影和 stream 顺序保护；
+- Controller Worker → Textual Message → UI 主线程更新边界；
+- Approval 防重复提交、Recovery → Reconcile 和执行期退出提示；
+- Session 连接、多轮 transcript 与只读 Workspace Tree；
 - Notepad 审批、作用域过滤、幂等写入和 Markdown 重载；
 - FINISH Guard 后 Finalization 以及节点重放幂等性；
 - History Store 幂等写入、作用域和冲突检查；
@@ -818,7 +884,10 @@ src/tikiagent/
 - JSONL Checkpoint/History 适合单机 v1，不提供多进程文件锁或分布式 exactly-once；
 - Trace 是 best effort，崩溃前最后几条事件可能缺失，但不会改变 Checkpoint 恢复语义；
 - `recent_events` 仍是 Graph 内的有界调试缓存；Application Event Stream 与 Trace 独立，不从 Trace 推断实时语义；
-- v0.7 Runtime 的 Code Environment Verifier 沿用主 Hybrid Demo 的 `comparison.html` 契约；Research/Coding/Hybrid 通用任务集与动态验收配置留到 v0.8 Evaluation；
+- Runtime 的 Code Environment Verifier 暂时沿用主 Hybrid Demo 的 `comparison.html` 契约；通用动态验收配置尚未实现；
+- TUI 重启后通过 Session 与权威 Checkpoint 恢复当前状态，不从 Trace 重放完整历史事件时间线；
+- Python 线程 Worker 无法安全强杀正在运行的同步 handler，因此执行期退出只提示恢复风险，不承诺取消 Workflow；
+- Workspace Tree 第一版只读，不提供文件内容预览或编辑；
 - 默认 `InMemoryNotepadStore` 不跨进程；应用可以显式使用 `.tiki/NOTEPAD.md` 的 `MarkdownNotepadStore`；
 - 当前 Token 统计是字符近似值，不是供应商精确 Tokenizer；
 - 当前 Compressor 是确定性规则实现，尚未实现 LLM Structured Summary；
@@ -839,8 +908,9 @@ src/tikiagent/
 - [x] v0.6a1 Gate / Enforce / Isolate：Permission、Approval 与安全执行管线；
 - [x] v0.6a2 Persist / Observe：双快照 Checkpoint、Graph Resume、Trace、持久化 History 与 Agent Runtime；
 - [x] v0.7 Application：Session、Turn、Intent Router、Event Stream、CLI 与恢复入口；
-- [ ] v0.8 Evaluation：Research / Coding / Hybrid 任务集与指标采集；
-- [ ] Single-Agent / Plan-Verify / Multi-Agent / Context Engine 消融实验。
+- [x] v0.8 Textual TUI：实时事件、多轮 Session、审批/恢复 Modal、只读 Workspace Tree；
+- [ ] v0.9 Demo Validation：Research / Coding / Hybrid 三个主 Demo 与 Trace 总结；
+- [ ] v1.0 README、架构材料、演示录制与面试答辩。
 
 ## v1 目标 Demo
 
