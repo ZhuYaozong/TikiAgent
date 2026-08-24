@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from tikiagent.application.models import ApplicationEvent, ApplicationOutcome
 from tikiagent.tui.models import SessionSnapshot, TimelineItem, TimelineKind, TuiViewState, WorkspaceEntry
+from tikiagent.tui.presenter import TuiEventPresenter
 
 
 class TuiEventAdapter:
@@ -11,6 +12,7 @@ class TuiEventAdapter:
         if timeline_limit < 1:
             raise ValueError("timeline_limit 必须大于 0")
         self.timeline_limit = timeline_limit
+        self.presenter = TuiEventPresenter()
 
     def reduce(self, state: TuiViewState, event: ApplicationEvent) -> TuiViewState:
         if state.stream_id is not None and state.stream_id != event.stream_id:
@@ -30,6 +32,9 @@ class TuiEventAdapter:
         }
         updates.update(self._event_updates(state, event))
         updates["timeline"] = (*state.timeline, self._timeline_item(event))[-self.timeline_limit :]
+        feed_item = self.presenter.present(event)
+        if feed_item is not None:
+            updates["feed"] = (*state.feed, feed_item)[-self.timeline_limit :]
         return state.model_copy(update=updates)
 
     def apply_outcome(self, state: TuiViewState, outcome: ApplicationOutcome) -> TuiViewState:

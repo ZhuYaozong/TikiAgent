@@ -33,6 +33,7 @@ from tikiagent.harness.checkpoint import (
 )
 from tikiagent.harness.models import ApprovalDecision, ExecutionContext, ExecutionScope
 from tikiagent.harness.recovery import ReconcileResult, RecoveryDecision
+from tikiagent.orchestration.completion import compose_final_answer
 from tikiagent.orchestration.models import (
     CodeResult,
     Handoff,
@@ -759,12 +760,7 @@ class MultiAgentWorkflow:
 
     @staticmethod
     def _completion_text(state: TikiState) -> str:
-        completed = {
-            item.todo_id: item.result_id
-            for item in state["task_board"].items.values()
-            if item.status == "completed"
-        }
-        return f"任务完成；已验证 Todo Result：{completed}"
+        return compose_final_answer(state)
 
     @staticmethod
     def _finish_guard_failures(

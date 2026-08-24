@@ -10,6 +10,17 @@ from pydantic import BaseModel, ConfigDict, Field
 TimelineKind = Literal[
     "user", "routing", "agent", "tool", "approval", "verification", "system", "final"
 ]
+FeedKind = Literal[
+    "user",
+    "assistant",
+    "routing",
+    "agent",
+    "tool",
+    "approval",
+    "verification",
+    "system",
+    "error",
+]
 
 
 class TuiModel(BaseModel):
@@ -21,6 +32,17 @@ class TimelineItem(TuiModel):
     kind: TimelineKind
     title: str = Field(min_length=1)
     detail: str = Field(min_length=1)
+
+
+class FeedItem(TuiModel):
+    """主对话区使用的安全展示投影，不携带原始 Event data。"""
+
+    sequence: int = Field(ge=1)
+    kind: FeedKind
+    title: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    detail: str | None = None
+    collapsed: bool = True
 
 
 class TranscriptItem(TuiModel):
@@ -71,4 +93,5 @@ class TuiViewState(TuiModel):
     error: str | None = None
     transcript: tuple[TranscriptItem, ...] = ()
     timeline: tuple[TimelineItem, ...] = ()
+    feed: tuple[FeedItem, ...] = ()
     workspace_entries: tuple[WorkspaceEntry, ...] = ()
