@@ -18,6 +18,8 @@ def test_runtime_and_package_metadata_versions_match() -> None:
         project = tomllib.load(stream)
 
     assert project["project"]["version"] == tikiagent.__version__
+    assert project["project"]["license"] == "MIT"
+    assert project["project"]["license-files"] == ["LICENSE"]
     assert set(project["project"]["scripts"]) == {
         "tikiagent",
         "tikiagent-demo",

@@ -1014,3 +1014,7 @@ src/tikiagent/
 1. Research：搜索重要 AI Agent 新闻并总结可追溯来源；
 2. Coding：创建 Python 项目并运行测试；
 3. Multi-Agent：调研 Agent Framework 的变化，并根据验证通过的调研结果生成对比网页。
+
+## License
+
+TikiAgent 使用 [MIT License](LICENSE) 发布。

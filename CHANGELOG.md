@@ -11,7 +11,8 @@
 - Execution Harness：Tool Exposure、Permission、Approval、Workspace/Runtime Enforcement、Checkpoint/Resume 与 Trace；
 - Application Plane：Session、Turn、Intent Router、Event Stream、CLI 与人工恢复入口；
 - Conversation-first Textual TUI，支持多轮 Session、Approval、Recovery、只读 Workspace 和 Markdown 最终回答；
-- Research、Coding 与 Hybrid 三类可重复 Demo Validation。
+- Research、Coding 与 Hybrid 三类可重复 Demo Validation；
+- 使用 MIT License 发布。
 
 ### Safety
 
