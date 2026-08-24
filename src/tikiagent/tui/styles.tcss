@@ -1,0 +1,87 @@
+Screen {
+    background: #07101f;
+    color: #dbeafe;
+}
+
+Header, Footer {
+    background: #101b33;
+    color: #7dd3fc;
+}
+
+#body { height: 1fr; }
+
+#main-panel {
+    width: 2fr;
+    min-width: 58;
+    border: round #2563eb;
+    padding: 0 1;
+}
+
+#side-panel {
+    width: 1fr;
+    min-width: 36;
+    border: round #475569;
+}
+
+.panel-title, .dialog-title {
+    height: 1;
+    color: #93c5fd;
+    text-style: bold;
+}
+
+.danger { color: #fb7185; }
+.muted { color: #94a3b8; padding: 0 1; }
+
+#timeline {
+    height: 1fr;
+    background: #07101f;
+    scrollbar-color: #2563eb;
+}
+
+.status-card {
+    margin: 1;
+    padding: 1;
+    background: #111827;
+    border-left: thick #2563eb;
+}
+
+#answer-card {
+    max-height: 8;
+    padding: 1;
+    margin-top: 1;
+    background: #0f2a24;
+    border-left: thick #22c55e;
+}
+
+#notice-bar {
+    height: 1;
+    padding: 0 1;
+    color: #cbd5e1;
+    background: #111827;
+}
+
+#prompt { border: round #334155; }
+#workspace-tree { height: 1fr; background: #0b1220; }
+#help-card { padding: 1 2; color: #cbd5e1; }
+
+ModalScreen {
+    align: center middle;
+    background: #020617 72%;
+}
+
+.dialog {
+    width: 76;
+    height: auto;
+    max-height: 30;
+    padding: 1 2;
+    border: round #f59e0b;
+    background: #111827;
+}
+
+.dialog-actions {
+    height: auto;
+    align-horizontal: right;
+    margin-top: 1;
+}
+
+.dialog-actions Button { margin-left: 1; }

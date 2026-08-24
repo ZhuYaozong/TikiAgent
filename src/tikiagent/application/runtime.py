@@ -200,7 +200,7 @@ class ApplicationRuntimeFactory:
             )
         )
 
-        # v0.7 保持已有主 Demo 验证契约；通用任务集在 v0.8 重新设计。
+        # v0.8 保持已有主 Demo 验证契约；自动 Evaluation 不在当前版本范围。
         verifier_registry = build_read_only_file_registry(workspace)
         register_command_tool(verifier_registry, workspace)
         verifier_dispatcher = Dispatcher(verifier_registry)
