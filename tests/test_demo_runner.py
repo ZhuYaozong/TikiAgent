@@ -16,10 +16,12 @@ class FakeDemoController:
         data_dir: Path,
         *,
         paused: bool = False,
+        error: Exception | None = None,
     ) -> None:
         self.bus = bus
         self.data_dir = data_dir
         self.paused = paused
+        self.error = error
         self.new_session_calls = 0
         self.submit_calls = 0
 
@@ -40,6 +42,8 @@ class FakeDemoController:
 
     def submit(self, *, session_id: str, user_input: str) -> ApplicationOutcome:
         self.submit_calls += 1
+        if self.error is not None:
+            raise self.error
         scope = EventScope(
             session_id=session_id,
             workspace_id="demo-workspace",
@@ -134,3 +138,22 @@ def test_runner_preserves_pause_without_auto_resume(tmp_path: Path) -> None:
     assert "resume --session-id session-1" in result.summary.next_action
     assert "--request-id approval-1" in result.summary.next_action
     assert "--expected-revision 3 --approve" in result.summary.next_action
+
+
+def test_runner_persists_operational_failure_without_traceback(tmp_path: Path) -> None:
+    def factory(bus: EventBus) -> FakeDemoController:
+        return FakeDemoController(
+            bus,
+            tmp_path,
+            error=RuntimeError("model quota exhausted"),
+        )
+
+    result = DemoRunner(tmp_path, controller_factory=factory).run(
+        get_scenario("research")
+    )
+
+    assert result.summary.status == "workflow_failed"
+    assert result.summary.application.event_count == 1
+    assert result.summary.trace.event_count == 0
+    assert "RuntimeError: model quota exhausted" in result.summary.final_message
+    assert (result.output_dir / "demo-result.md").exists()

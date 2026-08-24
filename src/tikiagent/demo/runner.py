@@ -9,6 +9,10 @@ from time import perf_counter
 from typing import Protocol
 from uuid import uuid4
 
+import httpx
+from openai import OpenAIError
+from pydantic import ValidationError
+
 from tikiagent.application.events import EventBus
 from tikiagent.application.models import ApplicationOutcome
 from tikiagent.application.runtime import ApplicationRuntimeFactory
@@ -24,6 +28,14 @@ class DemoController(Protocol):
 
 
 ControllerFactory = Callable[[EventBus], DemoController]
+_OPERATIONAL_ERRORS = (
+    OpenAIError,
+    httpx.HTTPError,
+    OSError,
+    RuntimeError,
+    ValidationError,
+    ValueError,
+)
 
 
 class DemoRunner:
@@ -57,10 +69,18 @@ class DemoRunner:
 
         # 一个 Demo Run 固定只创建一个 Session 并提交一个 Turn。
         session = controller.new_session(workspace_id=workspace_id)
-        outcome = controller.submit(
-            session_id=session.session_id,
-            user_input=scenario.task,
-        )
+        try:
+            outcome = controller.submit(
+                session_id=session.session_id,
+                user_input=scenario.task,
+            )
+        except _OPERATIONAL_ERRORS as error:
+            # 外部供应商/运行环境失败仍生成可审计结果，但不吞掉编程错误。
+            outcome = ApplicationOutcome(
+                status="workflow_failed",
+                session_id=session.session_id,
+                message=f"{type(error).__name__}: {error}",
+            )
         finished_at = datetime.now(UTC)
         elapsed = perf_counter() - started_clock
 

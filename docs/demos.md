@@ -47,6 +47,8 @@ Workspace 产物清单只记录 Session Workspace 内普通文件的相对路径
 
 Demo Runner 不自动批准工具。如果结果为 `awaiting_approval`、`recovery_required` 或 `awaiting_reconcile`，进程以退出码 2 结束，并在 `demo-result.md` 与终端中给出下一条真实 `tikiagent` 命令。
 
+模型配额、网络或供应商 HTTP 错误会记为 `workflow_failed` 并生成同样的结果目录；CLI 返回退出码 1，而不是泄漏 Python traceback。它不会把失败自动重试成额外付费请求。
+
 恢复状态必须由 Session 引用的权威 Checkpoint 判断，不能从 Demo Summary 或 Trace 推断。恢复后的事件仍进入原 Application/Harness 存储；当前 v0.9b 不把恢复过程伪装成同一个同步 Demo 命令。
 
 ## 配置与成本
