@@ -24,7 +24,7 @@ class Retriever:
         # 精确引用是当前控制流给出的权威关联，始终最优先。
         for record_id in request.context_refs:
             record = self.history.get_by_id(record_id)
-            if self._allowed(record, request, profile):
+            if self._allowed(record, request, profile, explicit_ref=True):
                 candidates.append(record)
 
         policy = profile.retrieval
@@ -50,8 +50,14 @@ class Retriever:
             )
 
         unique: dict[str, HistoryRecord] = {}
+        explicit_ids = set(request.context_refs)
         for record in candidates:
-            if self._allowed(record, request, profile):
+            if self._allowed(
+                record,
+                request,
+                profile,
+                explicit_ref=record.record_id in explicit_ids,
+            ):
                 unique.setdefault(record.record_id, record)
         return list(unique.values())[: policy.max_records]
 
@@ -60,10 +66,14 @@ class Retriever:
         record: HistoryRecord | None,
         request: ContextRequest,
         profile: ContextProfile,
+        *,
+        explicit_ref: bool = False,
     ) -> bool:
+        """显式引用可跨 Task，但永远不能跨 Session 或越过 Profile。"""
+
         return bool(
             record is not None
-            and record.task_id == request.task_id
             and record.session_id == request.session_id
             and record.record_type in profile.allowed_record_types
+            and (explicit_ref or record.task_id == request.task_id)
         )

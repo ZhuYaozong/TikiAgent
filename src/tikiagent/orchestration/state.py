@@ -101,6 +101,8 @@ class TikiState(TypedDict):
     task_id: str
     task: str
     session_id: str
+    # 应用层显式选择、允许当前 Task 复用的同 Session History 引用。
+    session_context_refs: list[str]
 
     # Current Agent working messages
     messages: Annotated[list[MessagePayload], append_messages]
@@ -169,7 +171,9 @@ def serialize_tiki_state(state: TikiState) -> dict[str, Any]:
 def restore_tiki_state(payload: dict[str, Any]) -> TikiState:
     """严格按 canonical TikiState schema 恢复 Graph 输入。"""
 
-    return _TIKI_STATE_ADAPTER.validate_python(payload)
+    # v0.6a2 Checkpoint 尚无该字段；迁移时只补空引用，不猜测历史。
+    migrated = {"session_context_refs": [], **payload}
+    return _TIKI_STATE_ADAPTER.validate_python(migrated)
 
 
 def create_initial_state(
@@ -180,6 +184,7 @@ def create_initial_state(
     max_steps: int,
     session_id: str | None = None,
     task_id: str | None = None,
+    session_context_refs: list[str] | None = None,
 ) -> TikiState:
     """创建字段完整、可直接传入 Graph 的初始状态。"""
 
@@ -190,6 +195,7 @@ def create_initial_state(
         "task_id": task_id or str(uuid4()),
         "task": task,
         "session_id": session_id or str(uuid4()),
+        "session_context_refs": list(dict.fromkeys(session_context_refs or [])),
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": task},
@@ -238,6 +244,7 @@ def create_plan_verify_state(
     max_attempts: int,
     session_id: str | None = None,
     task_id: str | None = None,
+    session_context_refs: list[str] | None = None,
 ) -> TikiState:
     """创建外层 Plan → Execute → Verify 工作流状态。"""
 
@@ -250,6 +257,7 @@ def create_plan_verify_state(
         "task_id": task_id or str(uuid4()),
         "task": task,
         "session_id": session_id or str(uuid4()),
+        "session_context_refs": list(dict.fromkeys(session_context_refs or [])),
         "messages": [],
         "pending_tool_calls": [],
         "tool_results": [],
@@ -295,6 +303,7 @@ def create_multi_agent_state(
     max_delegations: int,
     session_id: str | None = None,
     task_id: str | None = None,
+    session_context_refs: list[str] | None = None,
 ) -> TikiState:
     """使用同一个 canonical TikiState 创建 Multi-Agent 初始状态。"""
 
@@ -310,6 +319,7 @@ def create_multi_agent_state(
         max_steps=max_steps,
         session_id=session_id,
         task_id=task_id,
+        session_context_refs=session_context_refs,
     )
     return {
         **state,

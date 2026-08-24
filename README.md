@@ -2,7 +2,7 @@
 
 TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。它使用 Supervisor 根据任务动态调度 ResearchAgent 和 CodeAgent，通过统一 Verification Gate 验证每次 Specialist 交付，再由 Supervisor 决定继续委派或结束。Context Engine 根据当前 Agent、任务阶段和显式引用重新构建 Base Context，避免 Specialist 直接继承全部历史。
 
-当前版本为 **v0.6.0a2 Harness Persist / Observe**。
+当前版本为 **v0.7.0 Application / Session / Event Stream / CLI**。
 
 ## v0.5 Context-aware Multi-Agent 架构
 
@@ -304,6 +304,70 @@ Checkpoint 使用临时文件、`fsync` 和 `os.replace` 原子替换，并用 S
 uv run --locked python examples/harness_resume.py
 ```
 
+## v0.7 Application Plane
+
+Application Plane 在 Multi-Agent Workflow 外提供稳定入口，但不复制 Control、Context 或 Harness 的职责：
+
+```text
+User / CLI
+    ↓
+ApplicationController
+    ├── Session / Turn Store
+    ├── Intent Router ── CHAT ──→ ChatService（无工具）
+    └── WORKFLOW ───────────────→ TikiWorkflowAdapter
+                                      ↓
+                                 MultiAgentWorkflow
+                                      ↓
+                              Execution Harness Adapter
+                                      ↓
+                                   EventBus
+```
+
+四个应用身份的生命周期不同：
+
+```text
+Session = 一段多轮对话与共享 Workspace 的长期容器
+Turn    = 一次用户输入及应用响应
+Task    = 一个进入 WORKFLOW 的用户目标
+Run     = Task 的一次实际 Graph/Agent 执行尝试
+```
+
+`SessionRecord` 只保存身份、计数和 `active_checkpoint_id`，不内嵌完整 History、Messages 或 Workflow status。`status/resume/recover/reconcile` 始终加载权威 Checkpoint；Trace 和 Session 缓存都不能参与恢复决策。
+
+暂停顺序固定为：
+
+```text
+Workflow / Harness 保存 Checkpoint 成功
+        ↓
+Session 绑定 active_checkpoint_id
+```
+
+同一 Session 的下一 Task 可以显式引用上一 Task 已 Finalize 的 Result：
+
+```text
+previous final result_id
+        ↓
+TikiState.session_context_refs
+        ↓
+Retriever exact lookup
+        ↓
+新的 Agent Base Context
+```
+
+显式引用允许跨 Task，但禁止跨 Session，仍受 Agent Context Profile 的 record type 限制。Keyword/recent 检索保持当前 Task 作用域。ResearchAgent/CodeAgent 的内部 ReAct messages 不会跨 Agent 或跨 Task 继承。
+
+Intent Router 只判断 `CHAT / WORKFLOW`，不规划 Specialist 或 Tool。CHAT 路径不暴露 Tool Schema；WORKFLOW 的规划、路由与重试仍由 Supervisor 负责。
+
+EventBus 是唯一应用事件工厂，负责 stream 内递增 `sequence`、Secret 脱敏、长文本截断和 Sink 隔离：
+
+```text
+ApplicationController → session_started / turn_received / intent_routed / final_answer
+WorkflowAdapter       → supervisor / agent / handoff / result / verification
+HarnessAdapter        → tool request / approval / execution / result / recovery
+```
+
+Controller 不根据最终结果反推 Tool 或 Approval 事件；Harness 生命周期观察接口只转发真实发生的执行事实。Event Stream 用于 UI/CLI 展示，不是 Trace，也不是 Resume source of truth。
+
 ## Result 与 Verification 身份链
 
 每次委派、交付和验证都通过 ID 明确关联：
@@ -521,6 +585,44 @@ TIKI_TAVILY_BASE_URL=https://api.tavily.com
 
 `.env` 已被 Git 忽略。真实密钥不得写入 README、示例代码、测试或提交记录。
 
+创建 Session 不需要模型配置；提交 CHAT/WORKFLOW 时才懒加载 OpenAI-compatible 客户端，路由到 ResearchAgent 时才读取 Tavily 配置：
+
+```powershell
+uv run --locked tikiagent --json new-session --workspace-id demo
+
+uv run --locked tikiagent submit `
+  --session-id <SESSION_ID> `
+  --message "调研最近 Agent Framework 的变化并生成 comparison.html"
+
+uv run --locked tikiagent status --session-id <SESSION_ID>
+```
+
+Approval 和未知副作用恢复都必须携带权威 Checkpoint 的 revision 以及绑定 ID：
+
+```powershell
+uv run --locked tikiagent resume `
+  --session-id <SESSION_ID> `
+  --request-id <APPROVAL_REQUEST_ID> `
+  --expected-revision <REVISION> `
+  --approve
+
+uv run --locked tikiagent recover `
+  --session-id <SESSION_ID> `
+  --execution-id <EXECUTION_ID> `
+  --expected-revision <REVISION> `
+  --action confirmed_not_executed `
+  --decided-by operator `
+  --reason "已检查外部状态，handler 未运行"
+
+uv run --locked tikiagent reconcile `
+  --session-id <SESSION_ID> `
+  --execution-id <EXECUTION_ID> `
+  --expected-revision <REVISION> `
+  --result-file .\reconcile-result.json
+```
+
+`confirmed_executed` 只会进入 `awaiting_reconcile`。`reconcile-result.json` 必须提供与当前 ToolCall 绑定的真实 `ToolResult`、操作者和 evidence，CLI 不会伪造成功结果。
+
 本地 vLLM 只需替换模型配置：
 
 ```dotenv
@@ -601,6 +703,17 @@ uv run python examples/plan_verify_repair.py
 
 ```text
 src/tikiagent/
+├── application/
+│   ├── cli.py
+│   ├── context_refs.py
+│   ├── controller.py
+│   ├── events.py
+│   ├── harness_events.py
+│   ├── models.py
+│   ├── routing.py
+│   ├── runtime.py
+│   ├── session.py
+│   └── workflow.py
 ├── agents/
 │   ├── code.py
 │   ├── planner.py
@@ -678,6 +791,13 @@ src/tikiagent/
 - 多 ToolCall 在中途 ASK 后按原顺序继续，并在完整配对后写 LocalMemory；
 - `executing` 崩溃进入 `recovery_required`，不会自动重放；
 - `confirmed_executed` 在人工提供真实 ReconcileResult 前保持阻塞；
+- Session 仅保存 Checkpoint 引用，status/resume 从权威 Checkpoint 读取状态；
+- Checkpoint 先持久化、Session 后绑定的暂停顺序；
+- CHAT / WORKFLOW 路由与无工具 Chat 路径；
+- 同 Session 显式 Result 引用可跨 Task、不可跨 Session；
+- EventBus stream sequence、Secret 脱敏、截断和 Sink 故障隔离；
+- Workflow/Harness 事实由各自 Adapter 发布，不由 Controller 反推；
+- CLI 无模型配置创建 Session，以及真实 resume/recover/reconcile 参数入口；
 - Notepad 审批、作用域过滤、幂等写入和 Markdown 重载；
 - FINISH Guard 后 Finalization 以及节点重放幂等性；
 - History Store 幂等写入、作用域和冲突检查；
@@ -697,7 +817,8 @@ src/tikiagent/
 - `InMemoryHistoryStore` 仍可用于短测试；需要 Resume 的 Workflow 强制使用 `JsonlHistoryStore`；
 - JSONL Checkpoint/History 适合单机 v1，不提供多进程文件锁或分布式 exactly-once；
 - Trace 是 best effort，崩溃前最后几条事件可能缺失，但不会改变 Checkpoint 恢复语义；
-- `recent_events` 仍是内存中的 UI 展示缓存，后续 Application Event Stream 会统一消费 Trace；
+- `recent_events` 仍是 Graph 内的有界调试缓存；Application Event Stream 与 Trace 独立，不从 Trace 推断实时语义；
+- v0.7 Runtime 的 Code Environment Verifier 沿用主 Hybrid Demo 的 `comparison.html` 契约；Research/Coding/Hybrid 通用任务集与动态验收配置留到 v0.8 Evaluation；
 - 默认 `InMemoryNotepadStore` 不跨进程；应用可以显式使用 `.tiki/NOTEPAD.md` 的 `MarkdownNotepadStore`；
 - 当前 Token 统计是字符近似值，不是供应商精确 Tokenizer；
 - 当前 Compressor 是确定性规则实现，尚未实现 LLM Structured Summary；
@@ -717,7 +838,8 @@ src/tikiagent/
 - [x] v0.5 Context II：Monitor、Compressor、Notepad、动态 Prompt/Tool、Finalization；
 - [x] v0.6a1 Gate / Enforce / Isolate：Permission、Approval 与安全执行管线；
 - [x] v0.6a2 Persist / Observe：双快照 Checkpoint、Graph Resume、Trace、持久化 History 与 Agent Runtime；
-- [ ] Session、CLI、Event Stream 与 Evaluation；
+- [x] v0.7 Application：Session、Turn、Intent Router、Event Stream、CLI 与恢复入口；
+- [ ] v0.8 Evaluation：Research / Coding / Hybrid 任务集与指标采集；
 - [ ] Single-Agent / Plan-Verify / Multi-Agent / Context Engine 消融实验。
 
 ## v1 目标 Demo

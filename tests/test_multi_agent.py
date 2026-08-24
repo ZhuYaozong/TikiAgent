@@ -1,7 +1,7 @@
 """正式 Multi-Agent Graph 路由与 Verification Gate 闭环测试。"""
 
 from tikiagent.agents.supervisor import SupervisorAgent, next_required_specialist
-from tikiagent.context import BaseContext
+from tikiagent.context import BaseContext, HistoryRecord
 from tikiagent.orchestration.models import (
     CodeResult,
     Handoff,
@@ -208,6 +208,35 @@ def test_hybrid_passes_gate_after_each_specialist() -> None:
         item.status == "completed"
         for item in state["task_board"].items.values()
     )
+
+
+def test_explicit_session_result_reaches_specialist_without_old_messages() -> None:
+    value, _, code, _, _ = workflow(["code_agent"])
+    value.history_store.append(
+        HistoryRecord(
+            record_id="final:previous-task",
+            task_id="previous-task",
+            session_id="session-1",
+            record_type="result",
+            producer="supervisor",
+            summary="上一轮已验证调研结果",
+        )
+    )
+
+    state = value.invoke(
+        "根据刚才结果生成网页",
+        session_id="session-1",
+        task_id="current-task",
+        session_context_refs=["final:previous-task"],
+    )
+
+    assert state["status"] == "completed"
+    assert "final:previous-task" in code.contexts[0].working_memory.protected_refs
+    history_ids = [
+        item.record_id for item in code.contexts[0].working_memory.relevant_history
+    ]
+    assert "final:previous-task" in history_ids
+    assert all(item.record_type != "note" for item in code.contexts[0].working_memory.relevant_history)
 
 
 def test_failed_code_result_retries_and_only_latest_pass_finishes() -> None:

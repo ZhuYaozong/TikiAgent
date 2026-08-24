@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Mapping, Protocol
 from uuid import uuid4
 
 from tikiagent.harness.checkpoint import (
@@ -19,6 +19,7 @@ from tikiagent.harness.execution import ExecutionHarness
 from tikiagent.harness.models import (
     ApprovalDecision,
     ExecutionContext,
+    ExecutionScope,
     HarnessOutcome,
     ToolCall,
     ToolResult,
@@ -36,6 +37,23 @@ class CoordinatedOutcome:
     checkpoint: ExecutionCheckpoint | None
 
 
+@dataclass(frozen=True, slots=True)
+class ExecutionLifecycleEvent:
+    """Harness 已实际发生的生命周期事实，不是恢复权威来源。"""
+
+    event_type: str
+    scope: ExecutionScope
+    run_id: str
+    tool_call_id: str
+    tool_name: str
+    checkpoint: ExecutionCheckpoint | None = None
+    details: dict[str, Any] | None = None
+
+
+class ExecutionLifecycleObserver(Protocol):
+    def handle(self, event: ExecutionLifecycleEvent) -> None: ...
+
+
 class ExecutionCoordinator:
     """Checkpoint 是 Resume source of truth；Trace 只做旁路记录。"""
 
@@ -44,10 +62,12 @@ class ExecutionCoordinator:
         harness: ExecutionHarness,
         checkpoint_store: JsonCheckpointStore,
         trace_store: JsonlTraceStore,
+        lifecycle_observer: ExecutionLifecycleObserver | None = None,
     ) -> None:
         self.harness = harness
         self.checkpoint_store = checkpoint_store
         self.trace_store = trace_store
+        self.lifecycle_observer = lifecycle_observer
 
     def execute(
         self,
@@ -62,6 +82,16 @@ class ExecutionCoordinator:
 
         current_run_id = run_id or str(uuid4())
         executing: ExecutionCheckpoint | None = None
+        self._notify(
+            ExecutionLifecycleEvent(
+                event_type="tool_call_requested",
+                scope=context.scope,
+                run_id=current_run_id,
+                tool_call_id=str(raw_tool_call.get("tool_call_id", "unknown")),
+                tool_name=str(raw_tool_call.get("name", "unknown")),
+                details={"arguments": raw_tool_call.get("arguments", {})},
+            )
+        )
 
         def before_execute(call: ValidatedToolCall) -> None:
             nonlocal executing
@@ -102,6 +132,18 @@ class ExecutionCoordinator:
             return CoordinatedOutcome(outcome, checkpoint)
         if executing is None:
             # Exposure、参数或 Permission DENY 没有副作用，不需要恢复点。
+            result = outcome.tool_result
+            if result is not None:
+                self._notify(
+                    ExecutionLifecycleEvent(
+                        event_type="tool_execution_denied",
+                        scope=context.scope,
+                        run_id=current_run_id,
+                        tool_call_id=result.tool_call_id,
+                        tool_name=result.tool_name,
+                        details={"tool_result": result.model_dump(mode="json")},
+                    )
+                )
             return CoordinatedOutcome(outcome, None)
         completed = self._complete(executing, outcome)
         return CoordinatedOutcome(outcome, completed)
@@ -423,6 +465,25 @@ class ExecutionCoordinator:
             )
         except (OSError, ValueError):
             # Trace 是 best effort；绝不能回滚或改变已经持久化的执行事实。
+            pass
+        self._notify(
+            ExecutionLifecycleEvent(
+                event_type=event_type,
+                scope=checkpoint.scope,
+                run_id=checkpoint.identity.run_id,
+                tool_call_id=checkpoint.identity.tool_call_id,
+                tool_name=checkpoint.tool_call.name,
+                checkpoint=checkpoint,
+                details=details,
+            )
+        )
+
+    def _notify(self, event: ExecutionLifecycleEvent) -> None:
+        if self.lifecycle_observer is None:
+            return
+        try:
+            self.lifecycle_observer.handle(event)
+        except Exception:  # noqa: BLE001 - 展示事件绝不能改变执行语义
             pass
 
     @staticmethod
