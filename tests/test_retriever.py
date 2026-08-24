@@ -122,3 +122,45 @@ def test_disallowed_record_type_is_not_returned_by_exact_ref() -> None:
     )
 
     assert [item.record_id for item in records] == ["verification-1"]
+
+
+def test_explicit_ref_can_reuse_previous_task_in_same_session() -> None:
+    store = InMemoryHistoryStore()
+    store.append(
+        HistoryRecord(
+            record_id="final:previous",
+            task_id="task-previous",
+            session_id="session-1",
+            record_type="result",
+            producer="supervisor",
+            summary="上一轮调研结果",
+        )
+    )
+
+    records = Retriever(store).retrieve(
+        request(refs=["final:previous"]),
+        profile(),
+    )
+
+    assert [item.record_id for item in records] == ["final:previous"]
+
+
+def test_explicit_ref_cannot_cross_session() -> None:
+    store = InMemoryHistoryStore()
+    store.append(
+        HistoryRecord(
+            record_id="final:other-session",
+            task_id="task-previous",
+            session_id="session-other",
+            record_type="result",
+            producer="supervisor",
+            summary="其他会话的私有结果",
+        )
+    )
+
+    records = Retriever(store).retrieve(
+        request(refs=["final:other-session"]),
+        profile(),
+    )
+
+    assert records == []

@@ -26,6 +26,7 @@ def test_create_initial_state_separates_runtime_fields_from_messages() -> None:
     assert state["task_id"]
     assert state["session_id"] == "session-001"
     assert state["workspace_id"] == "workspace-001"
+    assert state["session_context_refs"] == []
     assert state["messages"][1] == {"role": "user", "content": "修复代码"}
     assert state["pending_tool_calls"] == []
     assert state["tool_results"] == []
@@ -123,6 +124,8 @@ def test_multi_agent_accepts_explicit_task_identity() -> None:
         workspace_id="workspace",
         max_steps=8,
         max_delegations=4,
+        session_context_refs=["final:previous", "final:previous"],
     )
 
     assert state["task_id"] == "task-001"
+    assert state["session_context_refs"] == ["final:previous"]

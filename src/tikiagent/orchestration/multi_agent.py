@@ -221,7 +221,13 @@ class MultiAgentWorkflow:
             to_agent=target,
             todo_id=todo.todo_id,
             instruction=decision.instruction,
-            context_refs=decision.context_refs,
+            # 应用显式选中的跨 Turn Result 必须随 Handoff 到达 Specialist；
+            # Retriever 仍会强制同 Session 与 Profile record type 边界。
+            context_refs=list(
+                dict.fromkeys(
+                    [*decision_state["session_context_refs"], *decision.context_refs]
+                )
+            ),
         )
         task_board = start_todo(
             decision_state["task_board"],
@@ -713,7 +719,7 @@ class MultiAgentWorkflow:
 
     @staticmethod
     def _supervisor_context_refs(state: TikiState) -> list[str]:
-        refs: list[str] = []
+        refs: list[str] = list(state["session_context_refs"])
         handoff = state["latest_handoff"]
         if handoff is not None:
             refs.append(handoff.handoff_id)
@@ -782,6 +788,7 @@ class MultiAgentWorkflow:
         *,
         session_id: str | None = None,
         task_id: str | None = None,
+        session_context_refs: list[str] | None = None,
     ) -> TikiState:
         state = create_multi_agent_state(
             task=task,
@@ -790,6 +797,7 @@ class MultiAgentWorkflow:
             max_delegations=self.max_delegations,
             session_id=session_id,
             task_id=task_id,
+            session_context_refs=session_context_refs,
         )
         state["history_cursor"] = self.history_store.cursor()
         return state
@@ -800,12 +808,14 @@ class MultiAgentWorkflow:
         *,
         session_id: str | None = None,
         task_id: str | None = None,
+        session_context_refs: list[str] | None = None,
     ) -> TikiState:
         result = self.graph.invoke(
             self.initial_state(
                 task,
                 session_id=session_id,
                 task_id=task_id,
+                session_context_refs=session_context_refs,
             ),
             config={"recursion_limit": self.recursion_limit},
         )
@@ -888,12 +898,14 @@ class MultiAgentWorkflow:
         *,
         session_id: str | None = None,
         task_id: str | None = None,
+        session_context_refs: list[str] | None = None,
     ) -> Iterator[TikiState]:
         snapshots = self.graph.stream(
             self.initial_state(
                 task,
                 session_id=session_id,
                 task_id=task_id,
+                session_context_refs=session_context_refs,
             ),
             config={"recursion_limit": self.recursion_limit},
             stream_mode="values",

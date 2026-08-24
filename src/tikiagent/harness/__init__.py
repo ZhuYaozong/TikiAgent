@@ -21,6 +21,8 @@ from tikiagent.harness.checkpoint import (
 from tikiagent.harness.coordinator import (
     CoordinatedOutcome,
     ExecutionCoordinator,
+    ExecutionLifecycleEvent,
+    ExecutionLifecycleObserver,
 )
 from tikiagent.harness.dispatcher import Dispatcher
 from tikiagent.harness.execution import ExecutionHarness
@@ -71,6 +73,8 @@ __all__ = [
     "ExecutionContext",
     "ExecutionCheckpoint",
     "ExecutionCoordinator",
+    "ExecutionLifecycleEvent",
+    "ExecutionLifecycleObserver",
     "ExecutionIdentity",
     "ExecutionHarness",
     "ExecutionScope",
