@@ -1,0 +1,74 @@
+<svg width="960" height="520" viewBox="0 0 960 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="pitchClip">
+      <rect x="24" y="24" width="912" height="472" rx="34"/>
+    </clipPath>
+  </defs>
+
+  <!-- Pitch -->
+  <rect x="24" y="24" width="912" height="472" rx="34" fill="#16884A"/>
+  <g clip-path="url(#pitchClip)" opacity="0.07">
+    <rect x="24" y="24" width="114" height="472" fill="white"/>
+    <rect x="252" y="24" width="114" height="472" fill="white"/>
+    <rect x="480" y="24" width="114" height="472" fill="white"/>
+    <rect x="708" y="24" width="114" height="472" fill="white"/>
+  </g>
+
+  <!-- Pitch markings -->
+  <rect x="50" y="50" width="860" height="420" rx="18" stroke="white" stroke-width="7"/>
+  <line x1="480" y1="50" x2="480" y2="470" stroke="white" stroke-width="7"/>
+  <circle cx="480" cy="260" r="72" stroke="white" stroke-width="7"/>
+  <circle cx="480" cy="260" r="5" fill="white"/>
+
+  <path d="M50 152H184V368H50" stroke="white" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M910 152H776V368H910" stroke="white" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M50 204H110V316H50" stroke="white" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M910 204H850V316H910" stroke="white" stroke-width="7" stroke-linejoin="round"/>
+
+  <circle cx="148" cy="260" r="5" fill="white"/>
+  <circle cx="812" cy="260" r="5" fill="white"/>
+
+  <!-- Midfield diamond / tiki passing structure -->
+  <g stroke="#F6D55C" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M350 260L448 150L555 260L448 370Z"/>
+    <path d="M448 150L704 210"/>
+    <path d="M555 260L704 310"/>
+    <path d="M448 370L704 310"/>
+    <path d="M350 260L448 150"/>
+  </g>
+
+  <!-- 4-4-2 diamond formation: GK -->
+  <g fill="#FFFDF4" stroke="#0C5A34" stroke-width="5">
+    <circle cx="110" cy="260" r="15"/>
+  </g>
+
+  <!-- Back four -->
+  <g fill="#FFFDF4" stroke="#0C5A34" stroke-width="5">
+    <circle cx="235" cy="115" r="15"/>
+    <circle cx="235" cy="210" r="15"/>
+    <circle cx="235" cy="310" r="15"/>
+    <circle cx="235" cy="405" r="15"/>
+  </g>
+
+  <!-- Midfield diamond -->
+  <g fill="#FFF7D6" stroke="#0C5A34" stroke-width="5">
+    <!-- DM -->
+    <circle cx="350" cy="260" r="17"/>
+    <!-- LM -->
+    <circle cx="448" cy="150" r="17"/>
+    <!-- RM -->
+    <circle cx="448" cy="370" r="17"/>
+    <!-- AM -->
+    <circle cx="555" cy="260" r="19"/>
+  </g>
+
+  <!-- Two forwards -->
+  <g fill="#FFFDF4" stroke="#0C5A34" stroke-width="5">
+    <circle cx="704" cy="210" r="16"/>
+    <circle cx="704" cy="310" r="16"/>
+  </g>
+
+  <!-- Small ball detail at attacking-mid node -->
+  <circle cx="555" cy="260" r="7" fill="#0B4027"/>
+  <path d="M555 255L560 259L558 265H552L550 259L555 255Z" fill="#FFFDF4"/>
+</svg>

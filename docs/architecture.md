@@ -119,6 +119,7 @@ Verification 提供判断证据 Supervisor 决定下一条控制边
 ## 入口
 
 - [README Quick Start](../README.md#quick-start)
+- [Design Decisions](design-decisions.md)
 - [Demo Validation](demos.md)
 - [Conversation-first TUI](tui.md)
 - [Architecture Evolution](architecture-evolution.md)
