@@ -2,9 +2,22 @@
 
 TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。它使用 Supervisor 根据任务动态调度 ResearchAgent 和 CodeAgent，通过统一 Verification Gate 验证每次 Specialist 交付，再由 Supervisor 决定继续委派或结束。Context Engine 根据当前 Agent、任务阶段和显式引用重新构建 Base Context，避免 Specialist 直接继承全部历史。
 
-当前版本为 **v0.9.1 Conversation-first TUI**。
+当前版本为 **v1.0.0**。
 
-## v0.5 Context-aware Multi-Agent 架构
+[Quick Start](#quick-start) · [Architecture](docs/architecture.md) · [Demo Validation](docs/demos.md) · [Textual TUI](docs/tui.md) · [Architecture Evolution](docs/architecture-evolution.md) · [Changelog](CHANGELOG.md)
+
+v1.0 提供四个可直接使用的入口：
+
+```text
+tikiagent       Session / submit / status / resume / recover / reconcile
+tikiagent-tui   Conversation-first Textual 交互终端
+tikiagent-demo  Research / Coding / Hybrid 冻结场景
+examples/       从 ReAct 到 Multi-Agent 的架构演进基线
+```
+
+## Architecture
+
+### Control / Context Planes
 
 ```text
                          Supervisor
@@ -99,7 +112,7 @@ Local Compressor 在**每一轮 ReAct 模型调用前**检查不断增长的局�
 
 Base Compressor 和 Local Compressor 使用独立 Protocol。当前默认是确定性 Rule-Based 实现：Base Summary 替换非保护 History 原文；Local Summary 替换旧 Interaction 并保留最近完整交互。LLM Compressor 尚未实现，但不需要改变 Runtime 接口即可扩展。
 
-## v0.6a1 Harness Security Substrate
+### Execution Harness：Gate / Enforce / Isolate
 
 正式 Harness 在原有 Registry、Dispatcher、Workspace 和 Command Runtime 之上增加执行前安全管线：
 
@@ -217,7 +230,7 @@ v0.6a2
 uv run --locked python examples/harness_security.py
 ```
 
-## v0.6a2 Persist / Observe
+### Execution Harness：Persist / Observe
 
 Checkpoint 是恢复事实的唯一权威来源，Trace 只用于审计和可观测性：
 
@@ -304,7 +317,7 @@ Checkpoint 使用临时文件、`fsync` 和 `os.replace` 原子替换，并用 S
 uv run --locked python examples/harness_resume.py
 ```
 
-## v0.7 Application Plane
+### Application Plane
 
 Application Plane 在 Multi-Agent Workflow 外提供稳定入口，但不复制 Control、Context 或 Harness 的职责：
 
@@ -368,7 +381,7 @@ HarnessAdapter        → tool request / approval / execution / result / recover
 
 Controller 不根据最终结果反推 Tool 或 Approval 事件；Harness 生命周期观察接口只转发真实发生的执行事实。Event Stream 用于 UI/CLI 展示，不是 Trace，也不是 Resume source of truth。
 
-## v0.9c Conversation-first Textual TUI
+### Conversation-first Textual TUI
 
 正式 TUI 复用 v0.7 Application Plane，不在 Widget 中重新实现 Workflow：
 
@@ -413,7 +426,7 @@ Approval Modal 只把一次用户决定提交给 `ApplicationController.resume()
 
 Workspace Tree 只返回受 Session 目录约束的文件名、相对路径和类型，不提供打开、编辑或删除 API，也不会跟随符号链接逃出 Workspace。`Ctrl+Q` 只关闭 UI；执行期间退出会明确提示未取消的 Workflow 可能需要恢复。
 
-## v0.9a Artifact-aware Verification
+### Artifact-aware Verification
 
 正式 Runtime 不再把 Code 验证固定为 `comparison.html`。`ArtifactAwareCodeVerifier` 根据当前 `CodeResult.changed_files` 的真实文件类型选择确定性检查：
 
@@ -437,7 +450,7 @@ CodeResult + Handoff identity
 
 Verifier 的 Registry 仍不含 `write_file` 或 `edit_file`。Python 测试只允许应用预配置的精确 argv，通过 `FixedCommandPermissionPolicy` 后由 Harness 执行；Verifier 不运行模型临时生成的检查命令。旧 `CodeEnvironmentVerifier` 保留给早期 Baseline 和已有测试，正式 Runtime 使用 Artifact-aware 实现。
 
-## v0.9b Demo Validation
+### Demo Validation
 
 `tikiagent-demo` 把 Research、Coding 和 Hybrid 三类主场景固定为可重复执行的单次 Application Run。每次运行只创建一个 Session、提交一个 Turn；如果进入 Approval 或 Recovery，它会原样暂停并打印真实 CLI 恢复命令，不会自动批准或伪造 ToolResult。
 
@@ -994,7 +1007,7 @@ src/tikiagent/
 - [x] v0.9a Artifact-aware Verification：Python unittest、HTML 结构、Artifact 与来源验证；
 - [x] v0.9b Demo Validation：Research / Coding / Hybrid 三个主 Demo与 Application/Trace 双视图；
 - [x] v0.9c Conversation-first TUI：用户可读最终回答、Markdown 对话、紧凑执行 Feed 与可隐藏侧栏；
-- [ ] v1.0 README、架构材料、演示录制与面试答辩。
+- [x] v1.0 发布收尾：版本契约、架构材料、三类 Demo Validation 与 Conversation-first TUI。
 
 ## v1 目标 Demo
 
