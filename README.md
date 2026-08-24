@@ -2,7 +2,7 @@
 
 TikiAgent 是一个渐进式构建的 **Multi-Agent Task Execution System**。它使用 Supervisor 根据任务动态调度 ResearchAgent 和 CodeAgent，通过统一 Verification Gate 验证每次 Specialist 交付，再由 Supervisor 决定继续委派或结束。Context Engine 根据当前 Agent、任务阶段和显式引用重新构建 Base Context，避免 Specialist 直接继承全部历史。
 
-当前版本为 **v0.9.0a1 Artifact-aware Verification**。
+当前版本为 **v0.9.0 Demo Validation**。
 
 ## v0.5 Context-aware Multi-Agent 架构
 
@@ -432,6 +432,28 @@ CodeResult + Handoff identity
 
 Verifier 的 Registry 仍不含 `write_file` 或 `edit_file`。Python 测试只允许应用预配置的精确 argv，通过 `FixedCommandPermissionPolicy` 后由 Harness 执行；Verifier 不运行模型临时生成的检查命令。旧 `CodeEnvironmentVerifier` 保留给早期 Baseline 和已有测试，正式 Runtime 使用 Artifact-aware 实现。
 
+## v0.9b Demo Validation
+
+`tikiagent-demo` 把 Research、Coding 和 Hybrid 三类主场景固定为可重复执行的单次 Application Run。每次运行只创建一个 Session、提交一个 Turn；如果进入 Approval 或 Recovery，它会原样暂停并打印真实 CLI 恢复命令，不会自动批准或伪造 ToolResult。
+
+```text
+Scenario
+   ↓
+ApplicationController.new_session()
+   ↓
+ApplicationController.submit()  ← 固定一次
+   ↓
+Application Event Digest        Harness Trace Digest
+   ↓                              ↓
+application-summary.json        trace-summary.json
+application-timeline.md         trace-timeline.md
+              └──────┬───────────┘
+                     ↓
+                demo-result.md
+```
+
+Application Events 用于展示任务语义；Harness Trace 用于审计工具生命周期。两者都不是恢复事实，Session 的暂停状态仍以权威 Checkpoint 为准。Research-only 场景可能没有 Harness Trace，这属于有效结果而不是异常。
+
 ## Result 与 Verification 身份链
 
 每次委派、交付和验证都通过 ID 明确关联：
@@ -672,6 +694,20 @@ uv run --locked tikiagent-tui --data-dir .tiki --session-id <SESSION_ID>
 
 创建 Session 和查看本地状态不需要 API Key；真正提交 CHAT/WORKFLOW 时才会懒加载模型配置。
 
+查看或运行三类冻结 Demo：
+
+```powershell
+# 只查看任务与验收条件，不调用模型或 Tavily
+uv run --locked tikiagent-demo hybrid --dry-run --json
+
+# 真实单次运行；结果默认写入 .tiki-demo/demo-runs/<DEMO_RUN_ID>/
+uv run --locked tikiagent-demo research
+uv run --locked tikiagent-demo coding
+uv run --locked tikiagent-demo hybrid
+```
+
+真实运行会产生模型或搜索 API 成本。完整输出格式、暂停恢复方式和边界见 [Demo Validation](docs/demos.md)。
+
 Approval 和未知副作用恢复都必须携带权威 Checkpoint 的 revision 以及绑定 ID：
 
 ```powershell
@@ -825,6 +861,13 @@ src/tikiagent/
 │   ├── models.py
 │   ├── openai_compatible.py
 │   └── structured_output.py
+├── demo/
+│   ├── cli.py
+│   ├── collector.py
+│   ├── models.py
+│   ├── runner.py
+│   ├── scenarios.py
+│   └── summary.py
 ├── tui/
 │   ├── adapter.py
 │   ├── app.py
@@ -889,6 +932,8 @@ src/tikiagent/
 - Controller Worker → Textual Message → UI 主线程更新边界；
 - Approval 防重复提交、Recovery → Reconcile 和执行期退出提示；
 - Session 连接、多轮 transcript 与只读 Workspace Tree；
+- Demo dry-run 不初始化 Runtime，真实 Run 固定单 Session、单 Turn；
+- Demo 暂停不自动 Resume，Application/Trace 双视图与相对 Artifact 清单；
 - Notepad 审批、作用域过滤、幂等写入和 Markdown 重载；
 - FINISH Guard 后 Finalization 以及节点重放幂等性；
 - History Store 幂等写入、作用域和冲突检查；
@@ -922,6 +967,8 @@ src/tikiagent/
 - Research rule verification 能证明来源来自真实 Web Observation，不能自动证明来源内容绝对真实；
 - Supervisor 的语义规划依赖模型质量，关键 FINISH 与身份关联由程序规则保护；
 - OpenAI-compatible 后端共享协议格式，但不同模型的 Tool Calling 能力仍可能不同。
+- Demo Validation 记录单次运行耗时、事件和产物，但它不是 Evaluation/Benchmark，不据此宣称成功率、成本优势或 Multi-Agent 优于 Single-Agent；
+- Demo 输出不会复制 Event `data` 或 Trace `details`，但用户任务与最终回答本身仍会写入本地结果目录；
 
 ## Roadmap
 
@@ -936,7 +983,7 @@ src/tikiagent/
 - [x] v0.7 Application：Session、Turn、Intent Router、Event Stream、CLI 与恢复入口；
 - [x] v0.8 Textual TUI：实时事件、多轮 Session、审批/恢复 Modal、只读 Workspace Tree；
 - [x] v0.9a Artifact-aware Verification：Python unittest、HTML 结构、Artifact 与来源验证；
-- [ ] v0.9b Demo Validation：Research / Coding / Hybrid 三个主 Demo 与 Trace 总结；
+- [x] v0.9b Demo Validation：Research / Coding / Hybrid 三个主 Demo与 Application/Trace 双视图；
 - [ ] v1.0 README、架构材料、演示录制与面试答辩。
 
 ## v1 目标 Demo

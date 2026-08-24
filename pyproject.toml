@@ -1,6 +1,6 @@
 [project]
 name = "tikiagent"
-version = "0.9.0a1"
+version = "0.9.0"
 description = "A multi-agent task execution system"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -20,6 +20,7 @@ build-backend = "hatchling.build"
 [project.scripts]
 tikiagent = "tikiagent.application.cli:main"
 tikiagent-tui = "tikiagent.tui.app:main"
+tikiagent-demo = "tikiagent.demo.cli:main"
 
 [dependency-groups]
 dev = [
