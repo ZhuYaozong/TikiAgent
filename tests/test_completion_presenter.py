@@ -1,6 +1,10 @@
 """用户最终回答只能由最新且验证通过的 Specialist Result 生成。"""
 
-from tikiagent.orchestration.completion import compose_final_answer
+from tikiagent.context.models import HistoryRecord
+from tikiagent.orchestration.completion import (
+    MAX_FINAL_ANSWER_CHARS,
+    compose_final_answer,
+)
 from tikiagent.orchestration.models import (
     CodeResult,
     ResearchResult,
@@ -138,3 +142,46 @@ def test_stale_verification_cannot_enter_final_answer() -> None:
         assert "没有可用于最终回答" in str(error)
     else:  # pragma: no cover
         raise AssertionError("旧 PASS 不能进入最终回答")
+
+
+def test_large_research_evidence_stays_within_final_history_limit() -> None:
+    state = _state("搜索新闻", ["research_agent"])
+    result = ResearchResult(
+        result_id="large-result",
+        handoff_id="large-handoff",
+        summary="总结" * 2000,
+        findings=[f"发现 {index} " + "x" * 1200 for index in range(12)],
+        sources=[
+            ResearchSource(
+                observation_id=f"obs-{index}",
+                title=f"来源 {index}",
+                url=f"https://example.com/source/{index}",
+                snippet="网页原始摘录" * 2000,
+            )
+            for index in range(10)
+        ],
+        unresolved_questions=["问题" * 500 for _ in range(6)],
+    )
+    state["specialist_results"] = {"research_agent": result.model_dump(mode="json")}
+    state["specialist_verifications"] = {
+        "research_agent": _report(
+            "research_agent",
+            result_id=result.result_id,
+            handoff_id=result.handoff_id,
+        )
+    }
+
+    answer = compose_final_answer(state)
+
+    assert len(answer) <= MAX_FINAL_ANSWER_CHARS
+    assert "https://example.com/source/0" in answer
+    assert "网页原始摘录" not in answer
+    # 与实际 Finalization 使用的 HistoryRecord 字段契约一致。
+    HistoryRecord(
+        record_id="final:task-1",
+        task_id="task-1",
+        session_id="session-1",
+        record_type="result",
+        producer="supervisor",
+        summary=answer,
+    )

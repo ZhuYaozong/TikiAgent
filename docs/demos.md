@@ -49,7 +49,7 @@ Demo Runner 不自动批准工具。如果结果为 `awaiting_approval`、`recov
 
 模型配额、网络或供应商 HTTP 错误会记为 `workflow_failed` 并生成同样的结果目录；CLI 返回退出码 1，而不是泄漏 Python traceback。它不会把失败自动重试成额外付费请求。
 
-恢复状态必须由 Session 引用的权威 Checkpoint 判断，不能从 Demo Summary 或 Trace 推断。恢复后的事件仍进入原 Application/Harness 存储；当前 v0.9b 不把恢复过程伪装成同一个同步 Demo 命令。
+恢复状态必须由 Session 引用的权威 Checkpoint 判断，不能从 Demo Summary 或 Trace 推断。恢复后的事件仍进入原 Application/Harness 存储；v1.0 不把恢复过程伪装成同一个同步 Demo 命令。
 
 ## 配置与成本
 
