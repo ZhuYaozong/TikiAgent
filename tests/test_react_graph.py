@@ -1,15 +1,17 @@
 """LangGraph ReAct 路由、Reducer 与终止条件测试。"""
 
-import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
+import json
 
 import pytest
 
-from tikiagent.harness import Dispatcher, Workspace, build_file_registry
-from tikiagent.llm import ModelResponse, ModelToolCall
-from tikiagent.orchestration import ReActWorkflow
+from tikiagent.baselines.react_graph import ReActWorkflow
+from tikiagent.harness.workspace import Workspace
+from tikiagent.providers.llm.models import ModelResponse, ModelToolCall
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_file_registry
 
 
 class ScriptedModel:

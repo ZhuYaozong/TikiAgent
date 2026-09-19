@@ -20,8 +20,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project.scripts]
-tikiagent = "tikiagent.application.cli:main"
-tikiagent-tui = "tikiagent.tui.app:main"
+tikiagent = "tikiagent.interfaces.cli:main"
+tikiagent-tui = "tikiagent.interfaces.tui.app:main"
 tikiagent-demo = "tikiagent.demo.cli:main"
 
 [dependency-groups]

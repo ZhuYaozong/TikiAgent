@@ -1,18 +1,12 @@
 """ReAct Code Actor 的结构化 Handoff 测试。"""
 
-from tikiagent.agents import (
-    AgentRunResult,
-    MaxStepsExceeded,
-    MultiAgentCodeAgent,
-    ReActCodeActor,
-)
-from tikiagent.context import (
-    BaseContext,
-    HistoryRecord,
-    WorkingMemory,
-)
-from tikiagent.harness import ToolResult
-from tikiagent.orchestration import Handoff, Plan
+from tikiagent.agents.code import MultiAgentCodeAgent
+from tikiagent.baselines.code_actor import ReActCodeActor
+from tikiagent.context.memory.models import HistoryRecord
+from tikiagent.context.models import BaseContext, WorkingMemory
+from tikiagent.orchestration.contracts import Handoff, Plan
+from tikiagent.runtime.models import AgentRunResult, MaxStepsExceeded
+from tikiagent.tools.models import ToolResult
 
 
 class SuccessfulAgent:

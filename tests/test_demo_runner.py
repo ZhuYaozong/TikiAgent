@@ -6,7 +6,7 @@ from tikiagent.application.events import EventBus
 from tikiagent.application.models import ApplicationOutcome, EventScope
 from tikiagent.demo.runner import DemoRunner
 from tikiagent.demo.scenarios import get_scenario
-from tikiagent.harness.trace import JsonlTraceStore
+from tikiagent.harness.persistence.trace import JsonlTraceStore
 
 
 class FakeDemoController:

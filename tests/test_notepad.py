@@ -2,11 +2,11 @@
 
 import pytest
 
-from tikiagent.context import (
+from tikiagent.context.memory.models import NotepadEntry
+from tikiagent.context.memory.notepad import (
     InMemoryNotepadStore,
     MarkdownNotepadStore,
     NotepadConflictError,
-    NotepadEntry,
 )
 
 

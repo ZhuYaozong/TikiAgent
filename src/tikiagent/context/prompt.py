@@ -2,12 +2,9 @@
 
 from collections.abc import Mapping
 
-from tikiagent.context.models import (
-    ContextAgentName,
-    ContextProfile,
-    PromptBundle,
-)
+from tikiagent.context.models import ContextProfile, PromptBundle
 from tikiagent.context.profiles import DEFAULT_CONTEXT_PROFILES
+from tikiagent.context.schema import ContextAgentName
 
 
 class PromptAssembler:

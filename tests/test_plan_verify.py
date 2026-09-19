@@ -1,11 +1,11 @@
 """Plan → Execute → Verify 路由与重试策略测试。"""
 
-from tikiagent.orchestration import (
+from tikiagent.baselines.plan_verify import PlanVerifyWorkflow
+from tikiagent.orchestration.contracts import (
     ActorResult,
     Plan,
     PlannerDecision,
     PlanningResult,
-    PlanVerifyWorkflow,
     VerificationCheck,
     VerificationReport,
 )

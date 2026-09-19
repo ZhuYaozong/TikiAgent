@@ -17,8 +17,8 @@ from tikiagent.application.models import (
 )
 from tikiagent.application.routing import IntentRouter
 from tikiagent.application.session import SessionService
-from tikiagent.application.workflow import WorkflowPort
-from tikiagent.harness.recovery import RecoveryDecision
+from tikiagent.application.workflow_adapter import WorkflowPort
+from tikiagent.harness.persistence.recovery import RecoveryDecision
 
 
 class ContextReferenceProvider(Protocol):

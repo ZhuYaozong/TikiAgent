@@ -1,24 +1,20 @@
 """v0.6a1 Gate / Enforce / Isolate 的完全离线演示。"""
 
 from pathlib import Path
-import sys
 from tempfile import TemporaryDirectory
 from typing import Any
+import sys
 
 from pydantic import BaseModel, ConfigDict
 
-from tikiagent.harness import (
-    ApprovalDecision,
-    Dispatcher,
-    ExecutionContext,
-    ExecutionHarness,
-    ExecutionScope,
-    RegisteredTool,
-    ToolRegistry,
-    Workspace,
-    build_file_registry,
-)
-from tikiagent.harness.command_tools import RunCommandArgs
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.permissions.models import ApprovalDecision
+from tikiagent.harness.scope import ExecutionContext, ExecutionScope
+from tikiagent.harness.workspace import Workspace
+from tikiagent.tools.commands import RunCommandArgs
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_file_registry
+from tikiagent.tools.registry import RegisteredTool, ToolRegistry
 
 
 class EmptyArgs(BaseModel):

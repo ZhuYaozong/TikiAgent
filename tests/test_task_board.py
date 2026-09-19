@@ -2,8 +2,8 @@
 
 import pytest
 
-from tikiagent.context import (
-    TaskBoard,
+from tikiagent.context.models import TaskBoard
+from tikiagent.context.task_board import (
     TaskBoardTransitionError,
     add_todo,
     next_actionable_todo,

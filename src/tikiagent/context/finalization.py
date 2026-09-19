@@ -2,13 +2,10 @@
 
 from typing import Any
 
-from tikiagent.context.history import HistoryConflictError, HistoryStore
-from tikiagent.context.models import (
-    FinalizationReport,
-    HistoryRecord,
-    NotepadEntry,
-)
-from tikiagent.context.notepad import NotepadStore
+from tikiagent.context.memory.history import HistoryConflictError, HistoryStore
+from tikiagent.context.memory.models import HistoryRecord, NotepadEntry
+from tikiagent.context.memory.notepad import NotepadStore
+from tikiagent.context.models import FinalizationReport
 
 
 class FinalizationService:

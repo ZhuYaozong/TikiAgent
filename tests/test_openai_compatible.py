@@ -2,7 +2,8 @@
 
 from types import SimpleNamespace
 
-from tikiagent.llm import ModelSettings, OpenAICompatibleClient
+from tikiagent.providers.llm.config import ModelSettings
+from tikiagent.providers.llm.openai_compatible import OpenAICompatibleClient
 
 
 class DumpableMessage:

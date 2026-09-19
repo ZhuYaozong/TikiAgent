@@ -4,19 +4,19 @@ import json
 
 import pytest
 
-from tikiagent.harness import (
+from tikiagent.harness.persistence.checkpoint import (
     CheckpointConflictError,
     CheckpointIntegrityError,
     ExecutionCheckpoint,
     ExecutionIdentity,
-    ExecutionScope,
     HistoryResumeReference,
     JsonCheckpointStore,
     PendingModelToolCall,
     ReActRunSnapshot,
-    ValidatedToolCall,
     WorkflowResumeSnapshot,
 )
+from tikiagent.harness.scope import ExecutionScope
+from tikiagent.tools.models import ValidatedToolCall
 
 
 def checkpoint() -> ExecutionCheckpoint:

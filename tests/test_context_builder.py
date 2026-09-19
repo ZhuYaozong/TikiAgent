@@ -1,17 +1,12 @@
 """ContextBuilder 的 Profile、Task Board 和 Base Context 测试。"""
 
-from tikiagent.context import (
-    ContextBuilder,
-    ContextRequest,
-    HistoryRecord,
-    InMemoryHistoryStore,
-    InMemoryNotepadStore,
-    NotepadEntry,
-    Retriever,
-    TaskBoard,
-    add_todo,
-    start_todo,
-)
+from tikiagent.context.builder import ContextBuilder
+from tikiagent.context.memory.history import InMemoryHistoryStore
+from tikiagent.context.memory.models import HistoryRecord, NotepadEntry
+from tikiagent.context.memory.notepad import InMemoryNotepadStore
+from tikiagent.context.memory.retriever import Retriever
+from tikiagent.context.models import ContextRequest, TaskBoard
+from tikiagent.context.task_board import add_todo, start_todo
 
 
 def board():

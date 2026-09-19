@@ -1,26 +1,22 @@
 """ExecutionHarness 固定顺序、Enforce 与 Runtime 边界测试。"""
 
-import sys
 from typing import Any
+import sys
 
-import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
+import pytest
 
-from tikiagent.context import ReActInteraction
-from tikiagent.harness import (
-    Dispatcher,
-    ExecutionContext,
-    ExecutionHarness,
-    ExecutionScope,
-    HarnessOutcome,
-    PermissionDecision,
-    RegisteredTool,
-    ToolRegistry,
-    ToolResult,
-    Workspace,
-    build_file_registry,
-)
-from tikiagent.harness.command_tools import RunCommandArgs
+from tikiagent.context.memory.models import ReActInteraction
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.models import HarnessOutcome
+from tikiagent.harness.permissions.models import PermissionDecision
+from tikiagent.harness.scope import ExecutionContext, ExecutionScope
+from tikiagent.harness.workspace import Workspace
+from tikiagent.tools.commands import RunCommandArgs
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_file_registry
+from tikiagent.tools.models import ToolResult
+from tikiagent.tools.registry import RegisteredTool, ToolRegistry
 
 
 class EmptyArgs(BaseModel):

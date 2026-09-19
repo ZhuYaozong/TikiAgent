@@ -1,6 +1,7 @@
 """四类 Agent 的 Context Profile。"""
 
-from tikiagent.context.models import ContextAgentName, ContextProfile
+from tikiagent.context.models import ContextProfile
+from tikiagent.context.schema import ContextAgentName
 
 
 DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {

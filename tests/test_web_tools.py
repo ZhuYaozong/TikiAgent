@@ -5,12 +5,10 @@ from typing import Any
 import httpx
 import pytest
 
-from tikiagent.harness.dispatcher import Dispatcher
-from tikiagent.harness.web_tools import (
-    SearchSettings,
-    TavilyProvider,
-    build_web_registry,
-)
+from tikiagent.providers.search.config import SearchSettings
+from tikiagent.providers.search.tavily import TavilyProvider
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.web import build_web_registry
 
 
 class FakeResponse:

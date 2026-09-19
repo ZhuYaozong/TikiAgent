@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import json
-import os
 from collections.abc import Iterable
 from pathlib import Path
 from uuid import uuid4
+import json
+import os
 
 from tikiagent.application.models import ApplicationEvent
 from tikiagent.demo.models import DemoRunSummary, TraceDigest
-from tikiagent.harness.trace import JsonlTraceStore, TraceEvent
+from tikiagent.harness.persistence.trace import JsonlTraceStore, TraceEvent
 
 
 def collect_artifacts(

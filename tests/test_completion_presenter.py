@@ -1,11 +1,11 @@
 """用户最终回答只能由最新且验证通过的 Specialist Result 生成。"""
 
-from tikiagent.context.models import HistoryRecord
+from tikiagent.context.memory.models import HistoryRecord
 from tikiagent.orchestration.completion import (
     MAX_FINAL_ANSWER_CHARS,
     compose_final_answer,
 )
-from tikiagent.orchestration.models import (
+from tikiagent.orchestration.contracts import (
     CodeResult,
     ResearchResult,
     ResearchSource,

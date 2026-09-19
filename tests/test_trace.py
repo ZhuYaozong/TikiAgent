@@ -1,6 +1,6 @@
 """Trace sequence、脱敏和旁路视图测试。"""
 
-from tikiagent.harness import JsonlTraceStore
+from tikiagent.harness.persistence.trace import JsonlTraceStore
 
 
 def test_trace_uses_sequence_and_redacts_secrets(tmp_path) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TypeVar
 
-from tikiagent.orchestration.models import CodeResult, ResearchResult, SpecialistName
+from tikiagent.orchestration.contracts import CodeResult, ResearchResult, SpecialistName
 from tikiagent.orchestration.state import TikiState
 
 

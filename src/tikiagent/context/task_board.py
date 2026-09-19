@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from tikiagent.context.models import (
-    ContextAgentName,
-    TaskBoard,
-    TodoItem,
-)
+from tikiagent.context.models import TaskBoard, TodoItem
+from tikiagent.context.schema import ContextAgentName
 
 
 class TaskBoardTransitionError(RuntimeError):

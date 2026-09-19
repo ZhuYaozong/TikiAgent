@@ -2,7 +2,8 @@
 
 import pytest
 
-from tikiagent.context import HistoryConflictError, HistoryRecord, JsonlHistoryStore
+from tikiagent.context.memory.history import HistoryConflictError, JsonlHistoryStore
+from tikiagent.context.memory.models import HistoryRecord
 
 
 def record(record_id: str, summary: str) -> HistoryRecord:

@@ -2,6 +2,8 @@
 
 TikiAgent 将 Multi-Agent 系统拆成 Control、Context、Execution 和 Application 四个平面。每个平面拥有独立职责，避免把模型决策、运行时安全、上下文管理和产品会话混在同一个 Agent Loop 中。
 
+本文说明系统职责；对应的源码入口和目录边界见 [模块导航](module-layout.md)。
+
 ## 总览
 
 ```text

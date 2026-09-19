@@ -1,18 +1,16 @@
 """只读 Verifier 的工具隔离和环境证据测试。"""
 
-import sys
 from pathlib import Path
+import sys
 
 import pytest
 
-from tikiagent.agents import CommandCheck, EnvironmentVerifier
-from tikiagent.harness import (
-    Dispatcher,
-    Workspace,
-    build_read_only_file_registry,
-    register_command_tool,
-)
-from tikiagent.orchestration import ActorResult, Plan
+from tikiagent.harness.workspace import Workspace
+from tikiagent.orchestration.contracts import ActorResult, Plan
+from tikiagent.tools.commands import register_command_tool
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_read_only_file_registry
+from tikiagent.verification.environment import CommandCheck, EnvironmentVerifier
 
 
 def build_verifier(

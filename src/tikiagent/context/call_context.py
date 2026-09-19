@@ -1,9 +1,9 @@
 """把 Prompt、Base、Local 和 Schema 组装成候选模型调用。"""
 
+from tikiagent.context.memory.models import LocalMemory
 from tikiagent.context.models import (
     BaseContext,
     CandidateModelCall,
-    LocalMemory,
     PromptBundle,
     ToolView,
 )

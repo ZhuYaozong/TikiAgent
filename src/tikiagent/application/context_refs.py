@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from tikiagent.context import JsonlHistoryStore
+from tikiagent.context.memory.history import JsonlHistoryStore
 
 
 class SessionContextReferenceProvider:

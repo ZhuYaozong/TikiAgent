@@ -4,13 +4,12 @@ import sys
 
 import pytest
 
-from tikiagent.harness import (
-    ExecutionContext,
-    ExecutionScope,
+from tikiagent.harness.permissions.policy import (
     FixedCommandPermissionPolicy,
     RuleBasedPermissionPolicy,
-    ValidatedToolCall,
 )
+from tikiagent.harness.scope import ExecutionContext, ExecutionScope
+from tikiagent.tools.models import ValidatedToolCall
 
 
 def context() -> ExecutionContext:

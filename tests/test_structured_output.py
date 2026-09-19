@@ -2,15 +2,15 @@
 
 from types import SimpleNamespace
 
-import pytest
 from pydantic import BaseModel
+import pytest
 
-from tikiagent.llm import (
-    ModelSettings,
-    OpenAICompatibleClient,
+from tikiagent.providers.llm.config import ModelSettings
+from tikiagent.providers.llm.openai_compatible import OpenAICompatibleClient
+from tikiagent.providers.llm.structured_output import (
     StructuredOutputError,
+    parse_structured_output,
 )
-from tikiagent.llm.structured_output import parse_structured_output
 
 
 class Answer(BaseModel):

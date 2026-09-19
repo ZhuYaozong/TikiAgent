@@ -1,7 +1,7 @@
 """正式项目骨架的冒烟测试。"""
 
-import tomllib
 from pathlib import Path
+import tomllib
 
 import tikiagent
 

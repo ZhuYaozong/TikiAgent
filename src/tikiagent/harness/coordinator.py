@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 from uuid import uuid4
 
-from tikiagent.harness.checkpoint import (
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.models import HarnessOutcome
+from tikiagent.harness.permissions.models import ApprovalDecision
+from tikiagent.harness.persistence.checkpoint import (
     CheckpointConflictError,
     ExecutionCheckpoint,
     JsonCheckpointStore,
@@ -15,18 +18,10 @@ from tikiagent.harness.checkpoint import (
     new_execution_identity,
     next_checkpoint,
 )
-from tikiagent.harness.execution import ExecutionHarness
-from tikiagent.harness.models import (
-    ApprovalDecision,
-    ExecutionContext,
-    ExecutionScope,
-    HarnessOutcome,
-    ToolCall,
-    ToolResult,
-    ValidatedToolCall,
-)
-from tikiagent.harness.recovery import ReconcileResult, RecoveryDecision
-from tikiagent.harness.trace import JsonlTraceStore
+from tikiagent.harness.persistence.recovery import ReconcileResult, RecoveryDecision
+from tikiagent.harness.persistence.trace import JsonlTraceStore
+from tikiagent.harness.scope import ExecutionContext, ExecutionScope
+from tikiagent.tools.models import ToolCall, ToolResult, ValidatedToolCall
 
 
 @dataclass(frozen=True, slots=True)

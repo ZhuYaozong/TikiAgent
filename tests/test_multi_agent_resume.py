@@ -3,26 +3,24 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from tikiagent.agents import MultiAgentCodeAgent, ResumableReActAgent
-from tikiagent.context import JsonlHistoryStore
-from tikiagent.harness import (
-    ApprovalDecision,
-    Dispatcher,
-    ExecutionCoordinator,
-    ExecutionHarness,
-    JsonCheckpointStore,
-    JsonlTraceStore,
-    PermissionDecision,
-    Workspace,
-    build_file_registry,
-)
-from tikiagent.llm import ModelResponse, ModelToolCall
-from tikiagent.orchestration.models import (
+from tikiagent.agents.code import MultiAgentCodeAgent
+from tikiagent.context.memory.history import JsonlHistoryStore
+from tikiagent.harness.coordinator import ExecutionCoordinator
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.permissions.models import ApprovalDecision, PermissionDecision
+from tikiagent.harness.persistence.checkpoint import JsonCheckpointStore
+from tikiagent.harness.persistence.trace import JsonlTraceStore
+from tikiagent.harness.workspace import Workspace
+from tikiagent.orchestration.contracts import (
     SupervisorDecision,
     SupervisorPlan,
     VerificationReport,
 )
-from tikiagent.orchestration.multi_agent import MultiAgentWorkflow
+from tikiagent.orchestration.workflow import MultiAgentWorkflow
+from tikiagent.providers.llm.models import ModelResponse, ModelToolCall
+from tikiagent.runtime.resumable import ResumableReActAgent
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_file_registry
 
 
 class ScriptedModel:

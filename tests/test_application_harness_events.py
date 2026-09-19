@@ -3,7 +3,7 @@
 from tikiagent.application.events import CollectingEventSink, EventBus
 from tikiagent.application.harness_events import HarnessEventForwarder
 from tikiagent.harness.coordinator import ExecutionLifecycleEvent
-from tikiagent.harness.models import ExecutionScope
+from tikiagent.harness.scope import ExecutionScope
 
 
 def test_harness_forwarder_uses_internal_source_and_stream_sequence() -> None:

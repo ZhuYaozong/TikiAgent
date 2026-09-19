@@ -2,30 +2,26 @@
 
 from typing import Any
 
-import pytest
 from pydantic import BaseModel, ConfigDict
+import pytest
 
-from tikiagent.harness import (
-    ApprovalDecision,
+from tikiagent.harness.coordinator import ExecutionCoordinator
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.permissions.models import ApprovalDecision, PermissionDecision
+from tikiagent.harness.persistence.checkpoint import (
     CheckpointConflictError,
-    Dispatcher,
-    ExecutionContext,
-    ExecutionCoordinator,
-    ExecutionHarness,
-    ExecutionScope,
     HistoryResumeReference,
     JsonCheckpointStore,
-    JsonlTraceStore,
     PendingModelToolCall,
-    PermissionDecision,
     ReActRunSnapshot,
-    ReconcileResult,
-    RecoveryDecision,
-    RegisteredTool,
-    ToolRegistry,
-    ToolResult,
     WorkflowResumeSnapshot,
 )
+from tikiagent.harness.persistence.recovery import ReconcileResult, RecoveryDecision
+from tikiagent.harness.persistence.trace import JsonlTraceStore
+from tikiagent.harness.scope import ExecutionContext, ExecutionScope
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.models import ToolResult
+from tikiagent.tools.registry import RegisteredTool, ToolRegistry
 
 
 class EmptyArgs(BaseModel):

@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
+import asyncio
 import threading
 
 from tikiagent.application.events import EventBus
 from tikiagent.application.models import ApplicationOutcome, EventScope
-from tikiagent.tui.app import TikiTuiApp
-from tikiagent.tui.modals import (
+from tikiagent.interfaces.tui.app import TikiTuiApp
+from tikiagent.interfaces.tui.modals import (
     ApprovalModal,
     QuitWarningModal,
     ReconcileModal,
     RecoveryModal,
     RecoverySubmission,
 )
-from tikiagent.tui.models import SessionSnapshot, TranscriptItem
+from tikiagent.interfaces.tui.models import SessionSnapshot, TranscriptItem
 
 
 class FakeBackend:

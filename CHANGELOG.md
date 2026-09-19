@@ -2,6 +2,14 @@
 
 本项目从 v0.1 开始保留可运行的架构演进基线。这里只记录面向使用者的发布变化。
 
+## Unreleased
+
+### Changed
+
+- 按职责分离 Agent 角色、单 Agent Runtime、多 Agent Orchestration、Verification、Tools、Providers 和 Interfaces；Context 与 Harness 按子域组织。
+- 早期 ReAct Graph 和 Plan/Verify 实现归入 `baselines/`，正式应用启动不加载这些基线。
+- 三个 CLI 命令名、配置方式和持久化 JSON 协议不变；直接导入旧 Python 子模块的调用方需要参考 [模块导航](docs/module-layout.md) 更新路径。保留的包级兼容导出采用延迟加载。
+
 ## 1.0.0 - 2026-08-25
 
 ### Added

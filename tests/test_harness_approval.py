@@ -1,20 +1,16 @@
 """Approval 的 Scope、参数绑定与一次性消费测试。"""
 
-import sys
 from typing import Any
+import sys
 
 import pytest
 
-from tikiagent.harness import (
-    ApprovalDecision,
-    Dispatcher,
-    ExecutionContext,
-    ExecutionHarness,
-    ExecutionScope,
-    RegisteredTool,
-    ToolRegistry,
-)
-from tikiagent.harness.command_tools import RunCommandArgs
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.permissions.models import ApprovalDecision
+from tikiagent.harness.scope import ExecutionContext, ExecutionScope
+from tikiagent.tools.commands import RunCommandArgs
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.registry import RegisteredTool, ToolRegistry
 
 
 class CountingHandler:

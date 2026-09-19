@@ -4,23 +4,20 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from tikiagent.harness import (
-    ApprovalDecision,
-    Dispatcher,
-    ExecutionContext,
-    ExecutionCoordinator,
-    ExecutionHarness,
-    ExecutionScope,
+from tikiagent.harness.coordinator import ExecutionCoordinator
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.permissions.models import ApprovalDecision, PermissionDecision
+from tikiagent.harness.persistence.checkpoint import (
     HistoryResumeReference,
     JsonCheckpointStore,
-    JsonlTraceStore,
     PendingModelToolCall,
-    PermissionDecision,
     ReActRunSnapshot,
-    RegisteredTool,
-    ToolRegistry,
     WorkflowResumeSnapshot,
 )
+from tikiagent.harness.persistence.trace import JsonlTraceStore
+from tikiagent.harness.scope import ExecutionContext, ExecutionScope
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.registry import RegisteredTool, ToolRegistry
 
 
 class WriteMarkerArgs(BaseModel):

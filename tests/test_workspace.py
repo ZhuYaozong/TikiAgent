@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from tikiagent.harness import ToolExecutionError, Workspace
+from tikiagent.harness.workspace import Workspace
+from tikiagent.tools.models import ToolExecutionError
 
 
 def test_resolve_path_inside_workspace(tmp_path: Path) -> None:

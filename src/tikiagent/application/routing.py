@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from tikiagent.application.models import IntentDecision
-from tikiagent.llm.models import StructuredModelClient
+from tikiagent.providers.llm.models import StructuredModelClient
 
 
 class IntentRouter(Protocol):

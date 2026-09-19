@@ -9,13 +9,13 @@ from time import perf_counter
 from typing import Protocol
 from uuid import uuid4
 
-import httpx
 from openai import OpenAIError
 from pydantic import ValidationError
+import httpx
 
+from tikiagent.application.bootstrap import ApplicationRuntimeFactory
 from tikiagent.application.events import EventBus
 from tikiagent.application.models import ApplicationOutcome
-from tikiagent.application.runtime import ApplicationRuntimeFactory
 from tikiagent.demo.collector import DemoEventCollector
 from tikiagent.demo.models import DemoRunResult, DemoRunSummary, DemoScenario
 from tikiagent.demo.summary import DemoSummaryStore, collect_artifacts, load_trace

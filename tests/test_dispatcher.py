@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-from tikiagent.harness import Dispatcher, Workspace, build_file_registry
+from tikiagent.harness.workspace import Workspace
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_file_registry
 
 
 def build_dispatcher(tmp_path: Path) -> Dispatcher:

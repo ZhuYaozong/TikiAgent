@@ -1,12 +1,9 @@
 """Retriever 默认优先级与 Profile 补充策略测试。"""
 
-from tikiagent.context import (
-    ContextProfile,
-    ContextRequest,
-    HistoryRecord,
-    InMemoryHistoryStore,
-    Retriever,
-)
+from tikiagent.context.memory.history import InMemoryHistoryStore
+from tikiagent.context.memory.models import HistoryRecord
+from tikiagent.context.memory.retriever import Retriever
+from tikiagent.context.models import ContextProfile, ContextRequest
 
 
 def request(*, refs=None, keywords=None) -> ContextRequest:
