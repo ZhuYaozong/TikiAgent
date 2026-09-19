@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
-from tikiagent.llm.models import ModelClient
+from tikiagent.providers.llm.models import ModelClient
 
 
 class ChatService(Protocol):

@@ -2,14 +2,13 @@
 
 from pathlib import Path
 
-from tikiagent.agents import ReActAgent
-from tikiagent.harness import (
-    Dispatcher,
-    Workspace,
-    build_file_registry,
-    register_command_tool,
-)
-from tikiagent.llm import ModelSettings, OpenAICompatibleClient
+from tikiagent.harness.workspace import Workspace
+from tikiagent.providers.llm.config import ModelSettings
+from tikiagent.providers.llm.openai_compatible import OpenAICompatibleClient
+from tikiagent.runtime.react import ReActAgent
+from tikiagent.tools.commands import register_command_tool
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_file_registry
 
 
 CODE_AGENT_PROMPT = """你是 TikiAgent 的代码修复 Agent。

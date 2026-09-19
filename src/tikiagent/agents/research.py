@@ -1,26 +1,28 @@
 """拥有独立 Web ReAct Loop 的 ResearchAgent。"""
 
-import json
 from collections.abc import Mapping
 from typing import Any, cast
+import json
 
 from pydantic import BaseModel, Field
 
-from tikiagent.context.local_memory import LocalMemoryManager
-from tikiagent.context.models import BaseContext, LocalMemory, WorkingMemory
-from tikiagent.context.runtime import ContextRuntime
-from tikiagent.context.tool_view import ToolExposureGuard
-from tikiagent.harness.dispatcher import Dispatcher
+from tikiagent.context.memory.local import LocalMemoryManager
+from tikiagent.context.memory.models import LocalMemory
+from tikiagent.context.models import BaseContext, WorkingMemory
+from tikiagent.context.preparation import ContextRuntime
 from tikiagent.harness.execution import ExecutionHarness
-from tikiagent.harness.models import ExecutionContext, ToolError, ToolResult
-from tikiagent.harness.registry import ToolRegistry
-from tikiagent.llm.models import ModelClient, StructuredModelClient
-from tikiagent.orchestration.models import (
+from tikiagent.harness.exposure import ToolExposureGuard
+from tikiagent.harness.scope import ExecutionContext
+from tikiagent.orchestration.contracts import (
     Handoff,
     ResearchObservation,
     ResearchResult,
     ResearchSource,
 )
+from tikiagent.providers.llm.models import ModelClient, StructuredModelClient
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.models import ToolError, ToolResult
+from tikiagent.tools.registry import ToolRegistry
 
 
 class ResearchDraftSource(BaseModel):
@@ -119,7 +121,7 @@ class ResearchAgent:
             for call in response.tool_calls:
                 if call.name in tool_counts:
                     tool_counts[call.name] += 1
-                if not ToolExposureGuard.allows(call.name, prepared.tool_view):
+                if not ToolExposureGuard.allows(call.name, prepared.tool_view.exposed_names):
                     result = ToolResult(
                         tool_call_id=call.tool_call_id,
                         tool_name=call.name,

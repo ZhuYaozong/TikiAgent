@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from tikiagent.harness.models import ToolExecutionError
+from tikiagent.tools.models import ToolExecutionError
 
 
 class Workspace:

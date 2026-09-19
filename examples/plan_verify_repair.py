@@ -1,24 +1,20 @@
 """使用真实模型运行 Plan → Execute → Verify 代码修复闭环。"""
 
-import sys
 from pathlib import Path
+import sys
 
-from tikiagent.agents import (
-    CommandCheck,
-    EnvironmentVerifier,
-    PlannerAgent,
-    ReActAgent,
-    ReActCodeActor,
-)
-from tikiagent.harness import (
-    Dispatcher,
-    Workspace,
-    build_file_registry,
-    build_read_only_file_registry,
-    register_command_tool,
-)
-from tikiagent.llm import ModelSettings, OpenAICompatibleClient
-from tikiagent.orchestration import PlanVerifyWorkflow, TikiState
+from tikiagent.baselines.code_actor import ReActCodeActor
+from tikiagent.baselines.plan_verify import PlanVerifyWorkflow
+from tikiagent.baselines.planner import PlannerAgent
+from tikiagent.harness.workspace import Workspace
+from tikiagent.orchestration.state import TikiState
+from tikiagent.providers.llm.config import ModelSettings
+from tikiagent.providers.llm.openai_compatible import OpenAICompatibleClient
+from tikiagent.runtime.react import ReActAgent
+from tikiagent.tools.commands import register_command_tool
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_file_registry, build_read_only_file_registry
+from tikiagent.verification.environment import CommandCheck, EnvironmentVerifier
 
 
 CODE_ACTOR_PROMPT = """你是 TikiAgent 的 Code Actor。

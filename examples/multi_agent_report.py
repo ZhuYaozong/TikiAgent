@@ -1,44 +1,38 @@
 """真实 Supervisor Graph：调研后生成并验证来源可追溯的网页。"""
 
+from pathlib import Path
 import argparse
 import json
 import sys
-from pathlib import Path
 
-from tikiagent.agents import (
-    CodeEnvironmentVerifier,
-    CommandCheck,
-    MultiAgentCodeAgent,
-    ResumableReActAgent,
-    ResearchAgent,
-    ResearchResultVerifier,
-    SupervisorAgent,
-)
-from tikiagent.harness import (
-    Dispatcher,
-    ExecutionCoordinator,
-    ExecutionHarness,
-    FixedCommandPermissionPolicy,
-    JsonCheckpointStore,
-    JsonlTraceStore,
-    SearchSettings,
-    TavilyProvider,
-    Workspace,
-    build_file_registry,
-    build_read_only_file_registry,
-    build_web_registry,
-    register_command_tool,
-)
-from tikiagent.context import BaseContext, JsonlHistoryStore
-from tikiagent.harness import ExecutionContext
-from tikiagent.llm import ModelSettings, OpenAICompatibleClient
-from tikiagent.orchestration import (
-    Handoff,
-    MultiAgentWorkflow,
-    ResearchResult,
-    TikiState,
-    VerificationGate,
-)
+from tikiagent.agents.code import MultiAgentCodeAgent
+from tikiagent.agents.research import ResearchAgent
+from tikiagent.agents.supervisor import SupervisorAgent
+from tikiagent.baselines.fixed_file_verifier import CodeEnvironmentVerifier
+from tikiagent.context.memory.history import JsonlHistoryStore
+from tikiagent.context.models import BaseContext
+from tikiagent.harness.coordinator import ExecutionCoordinator
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.permissions.policy import FixedCommandPermissionPolicy
+from tikiagent.harness.persistence.checkpoint import JsonCheckpointStore
+from tikiagent.harness.persistence.trace import JsonlTraceStore
+from tikiagent.harness.scope import ExecutionContext
+from tikiagent.harness.workspace import Workspace
+from tikiagent.orchestration.contracts import Handoff, ResearchResult
+from tikiagent.orchestration.state import TikiState
+from tikiagent.orchestration.workflow import MultiAgentWorkflow
+from tikiagent.providers.llm.config import ModelSettings
+from tikiagent.providers.llm.openai_compatible import OpenAICompatibleClient
+from tikiagent.providers.search.config import SearchSettings
+from tikiagent.providers.search.tavily import TavilyProvider
+from tikiagent.runtime.resumable import ResumableReActAgent
+from tikiagent.tools.commands import register_command_tool
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_file_registry, build_read_only_file_registry
+from tikiagent.tools.web import build_web_registry
+from tikiagent.verification.environment import CommandCheck
+from tikiagent.verification.gate import VerificationGate
+from tikiagent.verification.research import ResearchResultVerifier
 
 
 CODE_SYSTEM_PROMPT = """你是 TikiAgent CodeAgent。

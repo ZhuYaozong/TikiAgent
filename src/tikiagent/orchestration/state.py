@@ -6,7 +6,7 @@ from uuid import uuid4
 from pydantic import TypeAdapter
 
 from tikiagent.context.models import FinalizationReport, TaskBoard
-from tikiagent.orchestration.models import (
+from tikiagent.orchestration.contracts import (
     ActorResult,
     Handoff,
     Plan,

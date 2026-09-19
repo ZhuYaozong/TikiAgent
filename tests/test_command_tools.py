@@ -1,14 +1,12 @@
 """Command Runtime 的结果语义与安全边界测试。"""
 
-import sys
 from pathlib import Path
+import sys
 
-from tikiagent.harness import (
-    Dispatcher,
-    Workspace,
-    build_file_registry,
-    register_command_tool,
-)
+from tikiagent.harness.workspace import Workspace
+from tikiagent.tools.commands import register_command_tool
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_file_registry
 
 
 def build_dispatcher(tmp_path: Path) -> Dispatcher:

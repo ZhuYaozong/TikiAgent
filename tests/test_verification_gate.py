@@ -1,25 +1,23 @@
 """Verification Gate 的策略选择与身份关联测试。"""
 
-import sys
 from pathlib import Path
+import sys
 
-from tikiagent.agents.verifier import (
-    CodeEnvironmentVerifier,
-    CommandCheck,
-    ResearchResultVerifier,
-)
-from tikiagent.harness.command_tools import register_command_tool
-from tikiagent.harness.dispatcher import Dispatcher
-from tikiagent.harness.file_tools import build_read_only_file_registry
+from tikiagent.baselines.fixed_file_verifier import CodeEnvironmentVerifier
 from tikiagent.harness.workspace import Workspace
-from tikiagent.orchestration.models import (
+from tikiagent.orchestration.contracts import (
     CodeResult,
     Handoff,
     ResearchObservation,
     ResearchResult,
     ResearchSource,
 )
-from tikiagent.orchestration.verification_gate import VerificationGate
+from tikiagent.tools.commands import register_command_tool
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_read_only_file_registry
+from tikiagent.verification.environment import CommandCheck
+from tikiagent.verification.gate import VerificationGate
+from tikiagent.verification.research import ResearchResultVerifier
 
 
 def completed_handoff(agent: str, result_id: str) -> Handoff:

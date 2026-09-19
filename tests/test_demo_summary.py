@@ -8,7 +8,7 @@ from tikiagent.application.models import EventScope
 from tikiagent.demo.collector import DemoEventCollector
 from tikiagent.demo.models import DemoRunSummary
 from tikiagent.demo.summary import DemoSummaryStore, collect_artifacts, load_trace
-from tikiagent.harness.trace import JsonlTraceStore
+from tikiagent.harness.persistence.trace import JsonlTraceStore
 
 
 def test_summary_writes_separate_sanitized_application_and_trace_views(

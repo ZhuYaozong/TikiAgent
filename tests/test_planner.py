@@ -5,8 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from tikiagent.agents import PlannerAgent
-from tikiagent.orchestration import (
+from tikiagent.baselines.planner import PlannerAgent
+from tikiagent.orchestration.contracts import (
     Plan,
     PlannerDecision,
     PlanningResult,

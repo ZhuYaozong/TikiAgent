@@ -1,8 +1,9 @@
 """正式 Multi-Agent Graph 路由与 Verification Gate 闭环测试。"""
 
-from tikiagent.agents.supervisor import SupervisorAgent, next_required_specialist
-from tikiagent.context import BaseContext, HistoryRecord
-from tikiagent.orchestration.models import (
+from tikiagent.agents.supervisor import SupervisorAgent
+from tikiagent.context.memory.models import HistoryRecord
+from tikiagent.context.models import BaseContext
+from tikiagent.orchestration.contracts import (
     CodeResult,
     Handoff,
     ResearchObservation,
@@ -12,8 +13,9 @@ from tikiagent.orchestration.models import (
     SupervisorPlan,
     VerificationReport,
 )
-from tikiagent.orchestration.multi_agent import MultiAgentWorkflow
-from tikiagent.orchestration.verification_gate import VerificationGate
+from tikiagent.orchestration.guards import next_required_specialist
+from tikiagent.orchestration.workflow import MultiAgentWorkflow
+from tikiagent.verification.gate import VerificationGate
 
 
 class StructuredModel:

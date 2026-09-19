@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from tikiagent.tui.workspace import ReadOnlyWorkspaceSnapshotter
+from tikiagent.interfaces.tui.workspace import ReadOnlyWorkspaceSnapshotter
 
 
 def test_workspace_snapshot_is_scoped_and_read_only(tmp_path: Path) -> None:

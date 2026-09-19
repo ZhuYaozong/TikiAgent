@@ -2,13 +2,10 @@
 
 import pytest
 
-from tikiagent.context import (
-    FinalizationService,
-    InMemoryHistoryStore,
-    InMemoryNotepadStore,
-    NotepadEntry,
-)
-from tikiagent.context.history import HistoryConflictError
+from tikiagent.context.finalization import FinalizationService
+from tikiagent.context.memory.history import HistoryConflictError, InMemoryHistoryStore
+from tikiagent.context.memory.models import NotepadEntry
+from tikiagent.context.memory.notepad import InMemoryNotepadStore
 
 
 def service():

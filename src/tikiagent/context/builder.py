@@ -2,17 +2,17 @@
 
 from collections.abc import Mapping
 
+from tikiagent.context.memory.notepad import InMemoryNotepadStore, NotepadStore
+from tikiagent.context.memory.retriever import Retriever
 from tikiagent.context.models import (
     BaseContext,
-    ContextAgentName,
     ContextProfile,
     ContextRequest,
     TaskBoard,
     WorkingMemory,
 )
-from tikiagent.context.notepad import InMemoryNotepadStore, NotepadStore
 from tikiagent.context.profiles import DEFAULT_CONTEXT_PROFILES
-from tikiagent.context.retriever import Retriever
+from tikiagent.context.schema import ContextAgentName
 from tikiagent.context.task_board import todos_for_owner, todos_for_refs
 
 

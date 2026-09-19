@@ -2,17 +2,16 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from tikiagent.agents import ReActAgent, ResearchAgent
-from tikiagent.harness import (
-    Dispatcher,
-    RegisteredTool,
-    SearchSettings,
-    TavilyProvider,
-    ToolRegistry,
-    build_web_registry,
-)
-from tikiagent.llm import ModelSettings, OpenAICompatibleClient
-from tikiagent.orchestration import Handoff
+from tikiagent.agents.research import ResearchAgent
+from tikiagent.orchestration.contracts import Handoff
+from tikiagent.providers.llm.config import ModelSettings
+from tikiagent.providers.llm.openai_compatible import OpenAICompatibleClient
+from tikiagent.providers.search.config import SearchSettings
+from tikiagent.providers.search.tavily import TavilyProvider
+from tikiagent.runtime.react import ReActAgent
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.registry import RegisteredTool, ToolRegistry
+from tikiagent.tools.web import build_web_registry
 
 
 class CallResearchAgentArgs(BaseModel):

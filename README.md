@@ -213,18 +213,25 @@ ToolResult + Trace
 
 ```text
 src/tikiagent/
-├── agents/          # ResearchAgent、CodeAgent、ReAct runtime
-├── orchestration/   # Supervisor、LangGraph、Verification、Finalization
-├── context/         # History、Retriever、Builder、Compression、Notepad
-├── harness/         # Registry、Permission、Approval、Runtime、Checkpoint、Trace
-├── application/     # Session、Intent Router、Controller、Events、CLI
-├── tui/             # Textual application 与纯显示投影
+├── agents/          # Supervisor、ResearchAgent、CodeAgent 的角色策略
+├── runtime/         # 单 Agent ReAct 循环、暂停与恢复
+├── orchestration/   # 多 Agent Workflow、State、Handoff 与完成条件
+├── verification/    # 统一验证入口及 Research / Code / Artifact 验证
+├── context/         # 上下文组装，memory/ 信息源，compression/ 预算与压缩
+├── tools/           # 工具协议、Registry、Dispatcher 与工具实现
+├── harness/         # 执行强制边界，permissions/ 审批，persistence/ 恢复与审计
+├── providers/       # llm/ 模型适配与 search/ 搜索服务适配
+├── application/     # Session、Intent Router、Controller、Events 与应用装配
+├── interfaces/      # CLI 与 tui/ Textual 界面、纯显示投影
+├── baselines/       # 独立保留的 ReAct Graph、Plan/Verify 基线
 └── demo/            # Research / Coding / Hybrid 场景与结果收集
 
 examples/            # ReAct → LangGraph → Plan/Verify → Multi-Agent 基线
 tests/               # 离线自动化测试
 docs/                # 架构、设计决策、TUI、Demo 与演进说明
 ```
+
+各目录的入口文件、依赖边界与 Python 导入迁移说明见 [模块导航](docs/module-layout.md)。
 
 ## Design Principles
 

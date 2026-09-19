@@ -2,26 +2,22 @@
 
 import json
 
-import pytest
 from pydantic import BaseModel
+import pytest
 
-from tikiagent.context import (
-    BaseContext,
-    CallContextAssembler,
-    ContextBudget,
-    ContextMonitor,
-    ContextRuntime,
-    HistoryRecord,
-    LocalMemory,
-    PromptAssembler,
-    ReActInteraction,
+from tikiagent.context.call_context import CallContextAssembler
+from tikiagent.context.compression.compressors import (
     RuleBasedBaseCompressor,
     RuleBasedLocalCompressor,
-    ToolExposureGuard,
-    ToolSelector,
-    WorkingMemory,
 )
-from tikiagent.harness.registry import RegisteredTool, ToolRegistry
+from tikiagent.context.compression.models import ContextBudget
+from tikiagent.context.compression.monitor import ContextMonitor
+from tikiagent.context.memory.models import HistoryRecord, LocalMemory, ReActInteraction
+from tikiagent.context.models import BaseContext, WorkingMemory
+from tikiagent.context.preparation import ContextRuntime
+from tikiagent.context.prompt import PromptAssembler
+from tikiagent.context.tool_selection import ToolExposureGuard, ToolSelector
+from tikiagent.tools.registry import RegisteredTool, ToolRegistry
 
 
 class EmptyArgs(BaseModel):

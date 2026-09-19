@@ -1,11 +1,10 @@
 """Supervisor 规划、路由和最新 Result 验证保护测试。"""
 
-from tikiagent.agents.supervisor import (
-    SupervisorAgent,
-    latest_result_is_verified,
-)
-from tikiagent.context import ContextMonitor, ContextRuntime
-from tikiagent.orchestration.models import VerificationReport
+from tikiagent.agents.supervisor import SupervisorAgent
+from tikiagent.context.compression.monitor import ContextMonitor
+from tikiagent.context.preparation import ContextRuntime
+from tikiagent.orchestration.contracts import VerificationReport
+from tikiagent.orchestration.guards import latest_result_is_verified
 from tikiagent.orchestration.state import create_multi_agent_state
 
 

@@ -1,8 +1,8 @@
 from tikiagent.application.events import EventBus
 from tikiagent.application.models import ApplicationOutcome, EventScope
-from tikiagent.tui.adapter import TuiEventAdapter
-from tikiagent.tui.commands import parse_command
-from tikiagent.tui.models import TuiViewState
+from tikiagent.interfaces.tui.adapter import TuiEventAdapter
+from tikiagent.interfaces.tui.commands import parse_command
+from tikiagent.interfaces.tui.models import TuiViewState
 
 
 def test_event_adapter_projects_public_events_and_rejects_bad_order() -> None:

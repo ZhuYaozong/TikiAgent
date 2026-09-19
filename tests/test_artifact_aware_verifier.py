@@ -1,25 +1,23 @@
-import sys
 from pathlib import Path
+import sys
 
-from tikiagent.agents import ArtifactAwareCodeVerifier, CommandCheck
-from tikiagent.application.runtime import ApplicationRuntimeFactory
-from tikiagent.harness import (
-    Dispatcher,
-    ExecutionContext,
-    ExecutionHarness,
-    ExecutionScope,
-    FixedCommandPermissionPolicy,
-    Workspace,
-    build_read_only_file_registry,
-    register_command_tool,
-)
-from tikiagent.orchestration.models import (
+from tikiagent.application.bootstrap import ApplicationRuntimeFactory
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.permissions.policy import FixedCommandPermissionPolicy
+from tikiagent.harness.scope import ExecutionContext, ExecutionScope
+from tikiagent.harness.workspace import Workspace
+from tikiagent.orchestration.contracts import (
     CodeResult,
     Handoff,
     ResearchObservation,
     ResearchResult,
     ResearchSource,
 )
+from tikiagent.tools.commands import register_command_tool
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_read_only_file_registry
+from tikiagent.verification.artifacts import ArtifactAwareCodeVerifier
+from tikiagent.verification.environment import CommandCheck
 
 
 def build_verifier(tmp_path: Path):

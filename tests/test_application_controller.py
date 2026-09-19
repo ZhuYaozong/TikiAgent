@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 
-from tikiagent.application.cli import main
 from tikiagent.application.controller import ApplicationController
 from tikiagent.application.events import CollectingEventSink, EventBus
 from tikiagent.application.models import EventScope, WorkflowOutcome
 from tikiagent.application.routing import RuleBasedIntentRouter
-from tikiagent.application.session import JsonSessionStore, JsonlTurnStore, SessionService
+from tikiagent.application.session import (
+    JsonSessionStore,
+    JsonlTurnStore,
+    SessionService,
+)
+from tikiagent.interfaces.cli import main
 
 
 class ChatStub:

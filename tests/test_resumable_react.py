@@ -1,30 +1,29 @@
 """多 ToolCall 固定顺序、ASK 暂停和跨进程 ReAct Resume 测试。"""
 
-import json
 from collections.abc import Mapping, Sequence
 from typing import Any
+import json
 
 import pytest
 
-from tikiagent.agents import AgentRunPause, AgentRunResult, ResumableReActAgent
-from tikiagent.context import BaseContext, WorkingMemory
-from tikiagent.harness import (
-    ApprovalDecision,
+from tikiagent.context.models import BaseContext, WorkingMemory
+from tikiagent.harness.coordinator import ExecutionCoordinator
+from tikiagent.harness.execution import ExecutionHarness
+from tikiagent.harness.permissions.models import ApprovalDecision, PermissionDecision
+from tikiagent.harness.persistence.checkpoint import (
     CheckpointConflictError,
-    Dispatcher,
-    ExecutionContext,
-    ExecutionCoordinator,
-    ExecutionHarness,
-    ExecutionScope,
     HistoryResumeReference,
     JsonCheckpointStore,
-    JsonlTraceStore,
-    PermissionDecision,
     WorkflowResumeSnapshot,
-    Workspace,
-    build_file_registry,
 )
-from tikiagent.llm import ModelResponse, ModelToolCall
+from tikiagent.harness.persistence.trace import JsonlTraceStore
+from tikiagent.harness.scope import ExecutionContext, ExecutionScope
+from tikiagent.harness.workspace import Workspace
+from tikiagent.providers.llm.models import ModelResponse, ModelToolCall
+from tikiagent.runtime.models import AgentRunPause, AgentRunResult
+from tikiagent.runtime.resumable import ResumableReActAgent
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_file_registry
 
 
 class ScriptedModel:

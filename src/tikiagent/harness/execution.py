@@ -5,20 +5,17 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from tikiagent.harness.approval import ApprovalGate
-from tikiagent.harness.dispatcher import Dispatcher
-from tikiagent.harness.guards import ToolExposureGuard
-from tikiagent.harness.models import (
-    ApprovalDecision,
-    ApprovalRequest,
-    ExecutionContext,
-    HarnessOutcome,
-    ToolCall,
-    ToolError,
-    ToolResult,
-    ValidatedToolCall,
+from tikiagent.harness.exposure import ToolExposureGuard
+from tikiagent.harness.models import HarnessOutcome
+from tikiagent.harness.permissions.approval import ApprovalGate
+from tikiagent.harness.permissions.models import ApprovalDecision, ApprovalRequest
+from tikiagent.harness.permissions.policy import (
+    PermissionPolicy,
+    RuleBasedPermissionPolicy,
 )
-from tikiagent.harness.permission import PermissionPolicy, RuleBasedPermissionPolicy
+from tikiagent.harness.scope import ExecutionContext
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.models import ToolCall, ToolError, ToolResult, ValidatedToolCall
 
 
 BeforeExecute = Callable[[ValidatedToolCall], None]

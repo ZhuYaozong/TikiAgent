@@ -1,22 +1,21 @@
 """ReAct Agent Loop 测试。"""
 
-import json
-import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
+import json
+import sys
 
 import pytest
 
-from tikiagent.agents import MaxStepsExceeded, ReActAgent
-from tikiagent.context import BaseContext, WorkingMemory
-from tikiagent.harness import (
-    Dispatcher,
-    Workspace,
-    build_file_registry,
-    register_command_tool,
-)
-from tikiagent.llm import ModelResponse, ModelToolCall
+from tikiagent.context.models import BaseContext, WorkingMemory
+from tikiagent.harness.workspace import Workspace
+from tikiagent.providers.llm.models import ModelResponse, ModelToolCall
+from tikiagent.runtime.models import MaxStepsExceeded
+from tikiagent.runtime.react import ReActAgent
+from tikiagent.tools.commands import register_command_tool
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.files import build_file_registry
 
 
 class ScriptedModel:

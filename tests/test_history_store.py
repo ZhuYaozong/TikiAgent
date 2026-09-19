@@ -2,11 +2,8 @@
 
 import pytest
 
-from tikiagent.context import (
-    HistoryConflictError,
-    HistoryRecord,
-    InMemoryHistoryStore,
-)
+from tikiagent.context.memory.history import HistoryConflictError, InMemoryHistoryStore
+from tikiagent.context.memory.models import HistoryRecord
 
 
 def record(

@@ -5,11 +5,11 @@ from typing import Any
 from pydantic import BaseModel
 
 from tikiagent.agents.research import ResearchAgent
-from tikiagent.context import BaseContext, WorkingMemory
-from tikiagent.harness.dispatcher import Dispatcher
-from tikiagent.harness.registry import RegisteredTool, ToolRegistry
-from tikiagent.llm.models import ModelResponse, ModelToolCall
-from tikiagent.orchestration.models import Handoff
+from tikiagent.context.models import BaseContext, WorkingMemory
+from tikiagent.orchestration.contracts import Handoff
+from tikiagent.providers.llm.models import ModelResponse, ModelToolCall
+from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.registry import RegisteredTool, ToolRegistry
 
 
 class SearchArgs(BaseModel):
