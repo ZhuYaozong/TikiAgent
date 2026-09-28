@@ -76,6 +76,12 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
             "debugging": [
                 "优先读取最新失败证据",
                 "执行最小修复并重新运行失败检查",
+                "需要新建缺失文件时使用 write_file，禁止用命令绕过工具权限",
+            ],
+            "inspection": [
+                "仅查询现有信息，不创建报告或修改文件，不运行无关测试",
+                "仅调查 Workspace 中可见的事实；宿主保存位置可由用户在本地 /paths 查看，不要猜测外部目录",
+                "最终答案引用实际读取的文件或会话元数据；缺失证据应明确说明",
             ],
             "execute": ["按当前指令完成最小交付并获取证据"],
         },
@@ -92,6 +98,7 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
                 "read_file",
                 "list_files",
                 "grep",
+                "write_file",
                 "edit_file",
                 "run_command",
             },
@@ -103,6 +110,7 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
                 "edit_file",
                 "run_command",
             },
+            "inspection": {"read_file", "list_files", "grep"},
         },
         allowed_record_types={
             "handoff",

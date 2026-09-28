@@ -42,6 +42,8 @@ class SupervisorAgent:
                 phase="planning",
                 instruction=(
                     "判断需要哪些 Specialist，并生成可验证的验收标准。"
+                    "Code 任务必须分类：创建/修改文件是 artifact；"
+                    "只查询现有文件、位置或执行记录是 inspection，不要求产生新文件。"
                 ),
             ),
         )
@@ -75,6 +77,17 @@ class SupervisorAgent:
                 instruction="",
                 reason="所有必要 Specialist 的最新 Result 均有匹配 PASS",
                 context_refs=self._completion_refs(state),
+            )
+        code = state["specialist_results"].get("code_agent", {})
+        if target == "code_agent" and code.get("stop_reason"):
+            return SupervisorDecision(
+                action="stop", target_agent=None, instruction="",
+                reason=f"CodeAgent 已触发执行保护，停止重复委派：{code['stop_reason']}；{code.get('summary', '')}",
+            )
+        if target == "code_agent" and state.get("code_tool_call_count", 0) >= state.get("max_code_tool_calls", 60):
+            return SupervisorDecision(
+                action="stop", target_agent=None, instruction="",
+                reason="CodeAgent 已达到任务级工具调用预算，停止继续委派",
             )
         if state["delegation_count"] >= state["max_delegations"]:
             return SupervisorDecision(

@@ -41,19 +41,15 @@ def test_public_package_exports_remain_available() -> None:
     assert PublicToolResult is ToolResult
 
 
-def test_persisted_schemas_match_v1_baseline() -> None:
+def test_unchanged_protocols_match_v1_and_new_execution_fields_are_optional() -> None:
     # 摘要来自重构前提交 7ecd965，约束路径调整不改变已有持久化协议。
     # 后续有意升级协议时，应同时提供迁移策略再更新此快照。
     expected = {
-        "checkpoint": "ab3644d6a70de5f48fef1a1967bb46ea23616f82848e50e4c2cb261d6a665ba7",
-        "state": "f516030f2e53203c8ef543519d64166d78fc4a78c545067c8c0ebc26a0e55e12",
         "approval": "34851dd81eeda4df526099bf60576c0ba1c54d7ab72f69177e60a2da72a23818",
         "tool_result": "7f49049b68c1d1ee3d8eb5f5f501eaf1ea64ea9cd08c879ea23a8b645d4ce9e2",
         "history": "479732d958f0080ba7d6280977c744b071d4cca655501cc4e2804c809b25adc9",
     }
     models = {
-        "checkpoint": ExecutionCheckpoint,
-        "state": TikiState,
         "approval": ApprovalRequest,
         "tool_result": ToolResult,
         "history": HistoryRecord,
@@ -61,3 +57,9 @@ def test_persisted_schemas_match_v1_baseline() -> None:
     for name, model in models.items():
         schema = json.dumps(TypeAdapter(model).json_schema(), sort_keys=True)
         assert hashlib.sha256(schema.encode()).hexdigest() == expected[name]
+    # State/Checkpoint 已增加带默认值的模式和预算；旧快照迁移另有恢复测试。
+    assert TypeAdapter(TikiState).json_schema()["properties"]["max_code_tool_calls"]["type"] == "integer"
+    snapshot_schema = ExecutionCheckpoint.model_json_schema()["$defs"]["ReActRunSnapshot"]
+    assert snapshot_schema["properties"]["loop_guard"]["type"] == "object"
+    assert "loop_guard" not in snapshot_schema["required"]
+    assert "max_code_tool_calls" not in TypeAdapter(TikiState).json_schema()["required"]

@@ -15,6 +15,7 @@ from tikiagent.interfaces.tui.modals import (
     RecoverySubmission,
 )
 from tikiagent.interfaces.tui.models import SessionSnapshot, TranscriptItem
+from tikiagent.interfaces.tui.commands import parse_command
 
 
 class FakeBackend:
@@ -158,7 +159,8 @@ def test_conversation_layout_keeps_long_answer_and_input_visible(tmp_path: Path)
                 "submit",
                 {"session_id": app.view_state.session_id, "user_input": "长回答"},
             )
-            await app.workers.wait_for_complete()
+            # Workspace 刷新会取消被替代的扫描；此处只等待 Controller 的答复。
+            await app.workers.wait_for_complete([w for w in app.workers if w.group == "controller"])
             await pilot.pause()
 
             assistant = app.query(".feed-assistant").last()
@@ -172,6 +174,25 @@ def test_conversation_layout_keeps_long_answer_and_input_visible(tmp_path: Path)
             app.action_toggle_sidebar()
             assert side.display is False
 
+    asyncio.run(exercise())
+
+
+def test_paths_command_is_local_projection_and_never_submits_to_backend(tmp_path: Path) -> None:
+    async def exercise():
+        app, holder = build_app(tmp_path)
+        async with app.run_test(size=(120, 34)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            backend = holder["backend"]
+            before = list(backend.transcript)
+            app._execute_command(parse_command("/paths"))
+            await pilot.pause()
+            item = app.view_state.feed[-1]
+            assert item.title == "本地会话文件位置"
+            assert "session-test.jsonl" in item.detail
+            assert "workspaces" in item.detail
+            assert backend.transcript == before
+            assert app.operation_in_flight is None
     asyncio.run(exercise())
 
 

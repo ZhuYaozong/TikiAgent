@@ -78,8 +78,13 @@ F5               刷新只读 Workspace
 /approval        处理 Approval
 /recovery        处理 Recovery
 /workspace       刷新 Workspace
+/paths           本地显示 Workspace、History/Handoff、Trace 与 Checkpoint 位置
 /help            显示帮助
 /quit            退出 TUI
 ```
 
 Approval、Recovery 和 Reconcile 仍通过 Controller 进入权威 Harness/Checkpoint 流程。Feed、顶部状态和侧栏都只是可丢弃的显示投影，不能参与恢复决策。
+
+`/paths` 根据当前启动的 `--data-dir` 和 Session 生成位置展示，不调用 Controller、EventBus 或模型，路径不进入 Transcript/History。它说明配置的存储位置，不替代 Checkpoint 状态判断。交付的网页位于 `workspaces/<session_id>/`；handoff 是 `histories/<session_id>.jsonl` 中的 `record_type="handoff"` 记录，并不是 Workspace 内的文件。
+
+只读调查不运行测试，也不为了通过验证而创建报告。工具预算耗尽或同一参数重复失败时，执行器返回带证据的未完成结果，Supervisor 停止委派；主 Feed 显示最终失败原因，用户可调整任务后重新提交。`Ctrl+Q` 仍只关闭界面，不能保证后台命令已经取消。

@@ -30,10 +30,7 @@ class ScriptedModel:
         messages: Sequence[Mapping[str, Any]],
         tool_schemas: Sequence[Mapping[str, Any]],
     ) -> ModelResponse:
-        assert {schema["name"] for schema in tool_schemas} >= {
-            "read_file",
-            "edit_file",
-        }
+        assert "read_file" in {schema["name"] for schema in tool_schemas}
         self.requests.append([dict(message) for message in messages])
         return self.responses.pop(0)
 
@@ -252,8 +249,8 @@ def test_registered_but_unexposed_tool_returns_structured_error(
         agent="code_agent",
         working_memory=WorkingMemory(
             task="debug",
-            phase="debugging",
-            instruction="debug only",
+            phase="inspection",
+            instruction="inspect only",
         ),
     )
 

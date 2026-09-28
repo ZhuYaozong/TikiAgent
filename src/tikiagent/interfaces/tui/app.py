@@ -176,6 +176,8 @@ class TikiTuiApp(App[None]):
             self.action_show_recovery()
         elif command.name == "workspace":
             self.action_refresh_workspace()
+        elif command.name == "paths":
+            self._show_local_paths()
         elif command.name == "help":
             self.notify(self._help_text(), title="TikiAgent Commands", timeout=8)
         elif command.name == "quit":
@@ -541,6 +543,27 @@ class TikiTuiApp(App[None]):
         self.render_view_state()
         self.notify(message, severity="error")
 
+    def _show_local_paths(self) -> None:
+        if not self._require_session():
+            return
+        session_id = self.view_state.session_id
+        assert session_id is not None
+        root = self.workspace.session_root(session_id)
+        data_dir = self.data_dir.resolve()
+        # 纯本地显示投影，不调用 Controller、EventBus、History 或模型。
+        item = FeedItem(
+            sequence=self.view_state.last_sequence + 1,
+            kind="system", title="本地会话文件位置",
+            summary="网页等交付文件在 Workspace；handoff 保存在 History 的 handoff 记录中。",
+            detail=(f"Workspace: {root}\n"
+                    f"History / Handoff: {data_dir / 'histories' / (session_id + '.jsonl')}\n"
+                    f"Trace: {data_dir / 'traces' / (session_id + '.jsonl')}\n"
+                    f"Checkpoint: {data_dir / 'checkpoints'}"),
+            collapsed=False,
+        )
+        self.view_state = self.view_state.model_copy(update={"feed": (*self.view_state.feed, item)})
+        self.render_view_state()
+
     def _require_session(self) -> bool:
         if self.view_state.session_id is None:
             self._show_error("当前没有 Session")
@@ -559,6 +582,7 @@ class TikiTuiApp(App[None]):
 /approval        重新打开审批窗口
 /recovery        打开人工恢复窗口
 /workspace       刷新只读 Workspace Tree
+/paths           本地显示 Workspace、History/Handoff、Trace 与 Checkpoint 位置
 Ctrl+B           显示或隐藏侧栏
 /help            显示帮助
 /quit            关闭 TUI（不取消 Workflow）"""

@@ -33,6 +33,7 @@ class TodoItem(ContextModel):
     handoff_id: str | None = None
     result_id: str | None = None
     verification_id: str | None = None
+    delivery_mode: Literal["artifact", "inspection"] = "artifact"
 
 
 class TaskBoard(ContextModel):

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 class TuiCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    name: Literal["new", "session", "status", "approval", "recovery", "workspace", "help", "quit"]
+    name: Literal["new", "session", "status", "approval", "recovery", "workspace", "paths", "help", "quit"]
     argument: str | None = None
 
 
@@ -23,7 +23,7 @@ def parse_command(value: str) -> TuiCommand | None:
     if not parts:
         raise ValueError("请输入命令名称")
     name = parts[0].casefold()
-    valid = {"new", "session", "status", "approval", "recovery", "workspace", "help", "quit"}
+    valid = {"new", "session", "status", "approval", "recovery", "workspace", "paths", "help", "quit"}
     if name not in valid:
         raise ValueError(f"未知 TUI 命令：/{name}")
     argument = " ".join(parts[1:]).strip() or None

@@ -23,18 +23,46 @@ from tikiagent.runtime.models import (
     AgentRunOutcome,
     AgentRunPause,
     AgentRunResult,
-    MaxStepsExceeded,
 )
 from tikiagent.runtime.react import ReActAgent
+from tikiagent.runtime.guard import AgentLoopStopped, ToolLoopGuard
 from tikiagent.tools.models import ToolError, ToolResult
 
 
 class ResumableReActAgent(ReActAgent):
     """所有正式 ToolCall 都经过 ExecutionCoordinator，不走 legacy dispatch。"""
 
-    def __init__(self, *args, execution_coordinator: ExecutionCoordinator, **kwargs) -> None:
+    def __init__(
+        self, *args, execution_coordinator: ExecutionCoordinator,
+        max_tool_calls: int = 24, repeated_failure_limit: int = 3, **kwargs,
+    ) -> None:
+        if max_tool_calls < 1 or repeated_failure_limit < 1:
+            raise ValueError("工具预算和重复失败阈值必须大于 0")
         super().__init__(*args, **kwargs)
         self.execution_coordinator = execution_coordinator
+        self.max_tool_calls = max_tool_calls
+        self.repeated_failure_limit = repeated_failure_limit
+
+    def _guard(self, workflow, snapshot=None, legacy_calls=0) -> ToolLoopGuard:
+        remaining = max(0, workflow.state.get("max_code_tool_calls", 60)
+                        - workflow.state.get("code_tool_call_count", 0))
+        return ToolLoopGuard(
+            max_calls=min(self.max_tool_calls, remaining),
+            repeat_limit=self.repeated_failure_limit,
+            snapshot=snapshot, legacy_calls=legacy_calls,
+        )
+
+    @staticmethod
+    def _check_guard(guard, call, step, tool_results, usages, phases) -> None:
+        try:
+            guard.check(call.name, call.arguments_json)
+        except AgentLoopStopped as error:
+            # 部分多工具轮没有形成 LocalMemory，停止后不会再把未配对消息发给模型。
+            error.run_result = AgentRunResult(
+                final_text=str(error), steps=step, tool_results=tuple(tool_results),
+                messages=(), context_usages=tuple(usages), phases=tuple(phases),
+            )
+            raise
 
     def run(
         self,
@@ -93,6 +121,17 @@ class ResumableReActAgent(ReActAgent):
         if checkpoint.execution_state == "awaiting_approval":
             if approval_decision is None:
                 return self._pause(checkpoint)
+            if approval_decision.approved:
+                # 若重启后收紧预算，也必须在审批 handler 启动前阻止新副作用。
+                snapshot = checkpoint.react_snapshot
+                guard = self._guard(checkpoint.workflow_snapshot, snapshot.loop_guard,
+                                    legacy_calls=len(snapshot.tool_results))
+                self._check_guard(
+                    guard, snapshot.pending_tool_calls[snapshot.next_tool_index],
+                    snapshot.step, list(snapshot.tool_results),
+                    [ContextUsage.model_validate(item) for item in snapshot.context_usages],
+                    snapshot.phases,
+                )
             coordinated = coordinator.resume_approval(
                 checkpoint_id,
                 decision=approval_decision,
@@ -146,7 +185,9 @@ class ResumableReActAgent(ReActAgent):
         execution_context: ExecutionContext,
         workflow_snapshot: WorkflowResumeSnapshot,
         run_id: str | None,
+        guard: ToolLoopGuard | None = None,
     ) -> AgentRunOutcome:
+        guard = guard or self._guard(workflow_snapshot, legacy_calls=len(tool_results))
         for step in range(start_step, self.max_steps + 1):
             prepared = self.context_runtime.prepare(
                 base_context=context,
@@ -173,6 +214,7 @@ class ResumableReActAgent(ReActAgent):
                 assistant = self._canonical_assistant_message(response)
                 step_results: list[ToolResult] = []
                 for index, call in enumerate(calls):
+                    self._check_guard(guard, call, step, tool_results, context_usages, phases)
                     snapshot = self._snapshot(
                         task=context.render(),
                         step=step,
@@ -185,6 +227,7 @@ class ResumableReActAgent(ReActAgent):
                         pending_calls=calls,
                         pending_results=step_results,
                         next_tool_index=index,
+                        loop_guard=guard.snapshot(),
                     )
                     result = self._execute_call(
                         call=call,
@@ -198,6 +241,7 @@ class ResumableReActAgent(ReActAgent):
                         return result
                     step_results.append(result)
                     tool_results.append(result)
+                    guard.record(call.name, call.arguments_json, result)
                 self._append_interaction(local, step, assistant, step_results)
                 context = self._transition_context(context, step_results)
                 continue
@@ -211,7 +255,12 @@ class ResumableReActAgent(ReActAgent):
                     phases=tuple(phases),
                 )
             raise RuntimeError("模型既没有返回 ToolCall，也没有最终文本")
-        raise MaxStepsExceeded(f"Agent 超过最大步数：{self.max_steps}")
+        error = AgentLoopStopped("max_steps", f"Agent 超过最大步数：{self.max_steps}")
+        error.run_result = AgentRunResult(
+            final_text=str(error), steps=self.max_steps, tool_results=tuple(tool_results),
+            messages=(), context_usages=tuple(context_usages), phases=tuple(phases),
+        )
+        raise error
 
     def _continue_from_checkpoint(self, checkpoint) -> AgentRunOutcome:
         snapshot = checkpoint.react_snapshot
@@ -220,9 +269,15 @@ class ResumableReActAgent(ReActAgent):
         tool_results = list(snapshot.tool_results)
         usages = [ContextUsage.model_validate(item) for item in snapshot.context_usages]
         phases = list(snapshot.phases)
+        guard = self._guard(
+            checkpoint.workflow_snapshot, snapshot.loop_guard,
+            legacy_calls=len(tool_results),
+        )
         step_results = list(snapshot.pending_results)
         step_results.append(checkpoint.tool_result)
         tool_results.append(checkpoint.tool_result)
+        completed_call = snapshot.pending_tool_calls[snapshot.next_tool_index]
+        guard.record(completed_call.name, completed_call.arguments_json, checkpoint.tool_result)
         execution_context = ExecutionContext(
             scope=checkpoint.scope,
             agent=checkpoint.agent,
@@ -233,6 +288,7 @@ class ResumableReActAgent(ReActAgent):
             len(snapshot.pending_tool_calls),
         ):
             call = snapshot.pending_tool_calls[index]
+            self._check_guard(guard, call, snapshot.step, tool_results, usages, phases)
             next_snapshot = self._snapshot(
                 task=snapshot.task,
                 step=snapshot.step,
@@ -245,6 +301,7 @@ class ResumableReActAgent(ReActAgent):
                 pending_calls=snapshot.pending_tool_calls,
                 pending_results=step_results,
                 next_tool_index=index,
+                loop_guard=guard.snapshot(),
             )
             result = self._execute_call(
                 call=call,
@@ -258,6 +315,7 @@ class ResumableReActAgent(ReActAgent):
                 return result
             step_results.append(result)
             tool_results.append(result)
+            guard.record(call.name, call.arguments_json, result)
         self._append_interaction(
             local,
             snapshot.step,
@@ -275,6 +333,7 @@ class ResumableReActAgent(ReActAgent):
             execution_context=execution_context,
             workflow_snapshot=checkpoint.workflow_snapshot,
             run_id=checkpoint.identity.run_id,
+            guard=guard,
         )
 
     def _execute_call(
@@ -325,6 +384,7 @@ class ResumableReActAgent(ReActAgent):
         pending_calls: list[PendingModelToolCall],
         pending_results: list[ToolResult],
         next_tool_index: int,
+        loop_guard: dict[str, Any] | None = None,
     ) -> ReActRunSnapshot:
         return ReActRunSnapshot(
             task=task,
@@ -338,6 +398,7 @@ class ResumableReActAgent(ReActAgent):
             pending_tool_calls=pending_calls,
             pending_results=pending_results,
             next_tool_index=next_tool_index,
+            loop_guard=loop_guard or {},
         )
 
     @staticmethod

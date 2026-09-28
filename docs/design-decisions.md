@@ -148,3 +148,17 @@ Application Event
 Finalization 只清理 ephemeral runtime memory，例如 local summary、recent interactions 和 candidate context cache；它保留任务状态、最终 Result、History、Artifact references、关键 Notepad 和 Task Board 最终状态。
 
 最终用户回答由最新且验证通过的结构化 Specialist Result 确定性生成，不暴露内部身份 ID。回答使用独立长度预算；完整网页 snippet 继续保存在 ResearchResult 证据中，避免超过 Final History 字段限制而阻塞 Workflow 收尾。
+
+## 调查与交付分别验收
+
+SupervisorPlan 的 `code_task_mode` 区分 `artifact` 与 `inspection`，模式随 Todo 和 Handoff 固定，Result 不能自行降级验证要求。只读 Profile 仅展示读取、列表和搜索；Verifier 通过自己的 Harness 重新读取成功的文件/目录观察，核对真实环境证据，且拒绝写入、命令执行及虚构观察。文件交付继续使用已有 Artifact 检查。
+
+当前只读验收证明环境观察真实、一致且没有写入，不证明所有自然语言结论都已得到语义验证。至少需要一次成功的 `read_file` 或 `list_files` 观察；仅凭摘要或失败工具结果不能通过。宿主运行位置通过本地 `/paths` 展示，不发送给外部模型。
+
+## 有限执行与恢复预算
+
+正式 ReAct Runtime 分别限制模型步骤和实际工具次数。`loop_guard` 保存在 ReActRunSnapshot，记录次数与参数指纹对应的失败计数；拒绝、无效参数、命令非零退出和超时均占用预算。相同参数的成功结果会清除该参数的失败计数。每次执行默认最多 24 个工具结果，任务累计最多 60 个；Supervisor 负责结束判断，Graph 对继续委派另做强制预算检查。
+
+ASK 在收到真实 ToolResult 前不计完成调用；Resume 从同一 Checkpoint 恢复已完成消耗，审批执行完成后计入一次，不重复执行。旧 ReAct Snapshot 缺少 `loop_guard` 时，至少从已保存 ToolResult 恢复调用数。旧 State 补入任务计数 0、上限 60；历史快照中未记录的早期委派消耗不靠 Trace 推断。旧计划和 Handoff 默认 `artifact`，不擅自改变冻结的任务要求；需要新只读验收时重新提交任务。
+
+超预算停止保留真实 ToolResult，未完成的一轮不会写入 LocalMemory 或继续发给模型。模型 HTTP 请求另设有限 timeout/retry；命令工具的 Python 别名绑定启动 TikiAgent 的解释器，并返回真实执行 argv，避免 Windows 的 `python3` 缺失或系统 Python 与 uv 环境混用。未知命令仍按 Permission 拒绝。

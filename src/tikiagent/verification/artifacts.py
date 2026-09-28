@@ -18,6 +18,7 @@ from tikiagent.orchestration.contracts import (
 from tikiagent.tools.dispatcher import Dispatcher
 from tikiagent.verification.environment import CommandCheck, EnvironmentVerifier
 from tikiagent.verification.reports import _linked_report
+from tikiagent.verification.inspection import verify_inspection
 
 
 class ArtifactAwareCodeVerifier:
@@ -58,12 +59,18 @@ class ArtifactAwareCodeVerifier:
                 passed=result.completed,
                 evidence=f"completed={result.completed}",
             ),
-            VerificationCheck(
-                name="artifacts_declared",
-                passed=bool(result.changed_files),
-                evidence=f"changed_files={result.changed_files}",
-            ),
         ]
+        # 模式由 Planner → Todo → Handoff 冻结，不能由 CodeResult 自行降级。
+        if handoff.delivery_mode == "inspection":
+            checks.extend(verify_inspection(self.environment, result, execution_context))
+            return _linked_report(
+                handoff=handoff, result_id=result.result_id,
+                subject_agent="code_agent", mode="environment", checks=checks,
+            )
+        checks.append(VerificationCheck(
+            name="artifacts_declared", passed=bool(result.changed_files),
+            evidence=f"changed_files={result.changed_files}",
+        ))
         contents: dict[str, str] = {}
         for index, path in enumerate(dict.fromkeys(result.changed_files), start=1):
             read = self.environment._execute(

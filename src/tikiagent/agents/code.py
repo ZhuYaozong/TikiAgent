@@ -10,6 +10,7 @@ from tikiagent.harness.scope import ExecutionContext
 from tikiagent.orchestration.contracts import CodeResult, Handoff
 from tikiagent.runtime.models import AgentRunPause, AgentRunResult, MaxStepsExceeded
 from tikiagent.runtime.react import ReActAgent
+from tikiagent.runtime.guard import AgentLoopStopped
 from tikiagent.runtime.resumable import ResumableReActAgent
 
 
@@ -50,13 +51,7 @@ class MultiAgentCodeAgent:
                     base_context=base_context,
                 )
         except MaxStepsExceeded as error:
-            return CodeResult(
-                handoff_id=handoff.handoff_id,
-                summary=str(error),
-                completed=False,
-                steps=self.agent.max_steps,
-                context_refs_used=handoff.context_refs,
-            )
+            return self._stopped_result(handoff, error)
 
         if isinstance(run_result, AgentRunPause):
             return run_result
@@ -76,16 +71,29 @@ class MultiAgentCodeAgent:
 
         if not isinstance(self.agent, ResumableReActAgent):
             raise RuntimeError("当前 CodeAgent 不支持 Resume")
-        run_result = self.agent.resume(
-            checkpoint_id,
-            expected_revision=expected_revision,
-            approval_decision=approval_decision,
-            recovery_decision=recovery_decision,
-            reconciliation=reconciliation,
-        )
+        try:
+            run_result = self.agent.resume(
+                checkpoint_id,
+                expected_revision=expected_revision,
+                approval_decision=approval_decision,
+                recovery_decision=recovery_decision,
+                reconciliation=reconciliation,
+            )
+        except MaxStepsExceeded as error:
+            return self._stopped_result(handoff, error)
         if isinstance(run_result, AgentRunPause):
             return run_result
         return self._to_code_result(handoff, run_result)
+
+    def _stopped_result(self, handoff, error) -> CodeResult:
+        if isinstance(error, AgentLoopStopped) and error.run_result is not None:
+            result = self._to_code_result(handoff, error.run_result)
+            return result.model_copy(update={"completed": False, "stop_reason": error.reason})
+        return CodeResult(
+            handoff_id=handoff.handoff_id, summary=str(error), completed=False,
+            steps=self.agent.max_steps, context_refs_used=handoff.context_refs,
+            stop_reason="max_steps",
+        )
 
     @staticmethod
     def _to_code_result(

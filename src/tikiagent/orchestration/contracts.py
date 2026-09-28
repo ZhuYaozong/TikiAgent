@@ -77,6 +77,10 @@ class SupervisorPlan(ControlModel):
     goal: str = Field(min_length=1)
     required_specialists: list[SpecialistName] = Field(min_length=1)
     acceptance_criteria: list[str] = Field(min_length=1)
+    code_task_mode: Literal["artifact", "inspection"] = Field(
+        default="artifact",
+        description="创建/修改交付文件用 artifact；仅查询现有文件、路径或运行信息用 inspection",
+    )
 
 
 class SupervisorDecision(ControlModel):
@@ -131,6 +135,7 @@ class CodeResult(ControlModel):
     tests_run: list[str] = Field(default_factory=list)
     context_refs_used: list[str] = Field(default_factory=list)
     tool_results: tuple[dict[str, Any], ...] = ()
+    stop_reason: str | None = None
 
 
 class Handoff(ControlModel):
@@ -144,3 +149,4 @@ class Handoff(ControlModel):
     context_refs: list[str] = Field(default_factory=list)
     result_id: str | None = None
     status: Literal["pending", "completed", "failed"] = "pending"
+    delivery_mode: Literal["artifact", "inspection"] = "artifact"

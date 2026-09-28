@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import sys
+import pytest
 
 from tikiagent.harness.workspace import Workspace
 from tikiagent.tools.commands import register_command_tool
@@ -101,3 +102,12 @@ def test_missing_executable_is_a_structured_tool_error(tmp_path: Path) -> None:
     assert result.ok is False
     assert result.error is not None
     assert result.error.code == "command_not_found"
+
+
+@pytest.mark.parametrize("alias", ["python", "python3", "python.exe", "python3.exe"])
+def test_python_alias_uses_project_interpreter(tmp_path: Path, alias: str) -> None:
+    result = run_command(build_dispatcher(tmp_path), [alias, "-c", "import sys; print(sys.executable)"])
+    assert result.ok
+    assert result.output["exit_code"] == 0
+    assert result.output["command"][0] == sys.executable
+    assert result.output["stdout"].strip().casefold() == sys.executable.casefold()

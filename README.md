@@ -101,6 +101,8 @@ Copy-Item .env.example .env
 TIKI_LLM_API_KEY=your-model-api-key
 TIKI_LLM_BASE_URL=https://api.deepseek.com
 TIKI_LLM_MODEL=deepseek-chat
+TIKI_LLM_TIMEOUT_SECONDS=60
+TIKI_LLM_MAX_RETRIES=1
 
 TIKI_SEARCH_PROVIDER=tavily
 TIKI_TAVILY_API_KEY=tvly-your-key
@@ -108,6 +110,8 @@ TIKI_TAVILY_BASE_URL=https://api.tavily.com
 ```
 
 `.env` 已被 Git 忽略。不要把真实 API Key 写入 README、示例代码或提交记录。
+
+模型请求默认超时为 60 秒、最多重试 1 次，可用以上两个可选配置调整。模型服务的 `insufficient_quota` 错误需要在服务控制台处理额度；修改项目步数不会解决配额不足。
 
 ### Start the TUI
 
@@ -255,6 +259,10 @@ uv run --locked python -m compileall -q src tests
 ```
 
 当前覆盖包括 Agent 路由、Result/Verification 身份链、Context Compression、Tool Exposure、Permission/Approval、Checkpoint/Resume、Recovery/Reconcile、Session、Event Stream、Artifact Verification、TUI 投影和三类 Demo 生命周期。
+
+只读文件调查使用 `inspection` 验收：Verifier 独立复读文件或目录证据，无需创建报告。创建/修改文件使用 `artifact` 验收，继续检查实际交付物。模型步骤与工具调用分别计数；正式 CodeAgent 默认每次最多 24 次工具调用、每任务最多 60 次，相同工具参数累计失败 3 次后禁止第四次执行。预算包含被拒绝和参数错误的调用，暂停/恢复不会重置已消耗次数。
+
+TUI 中输入 `/paths` 可在本地查看当前 Session 的 Workspace、History/Handoff、Trace 和 Checkpoint 位置。此命令只更新显示，不提交给模型，也不写入任务 History。
 
 真实 API Demo 会产生费用和外部请求，不属于默认测试套件。
 

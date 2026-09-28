@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from uuid import uuid4
+from typing import Literal
 
 from tikiagent.context.models import TaskBoard, TodoItem
 from tikiagent.context.schema import ContextAgentName
@@ -16,6 +17,7 @@ def create_task_board(
     *,
     task: str,
     owners: list[ContextAgentName],
+    code_task_mode: Literal["artifact", "inspection"] = "artifact",
 ) -> TaskBoard:
     """根据 SupervisorPlan 创建第一批 Todo，同时保留多 Todo 扩展能力。"""
 
@@ -25,6 +27,7 @@ def create_task_board(
             board,
             description=f"{owner} 完成任务：{task}",
             owner=owner,
+            delivery_mode=code_task_mode if owner == "code_agent" else "artifact",
         )
     return board
 
@@ -35,6 +38,7 @@ def add_todo(
     description: str,
     owner: ContextAgentName,
     todo_id: str | None = None,
+    delivery_mode: Literal["artifact", "inspection"] = "artifact",
 ) -> TaskBoard:
     """添加工作项；同一个 owner 可以拥有多个 Todo。"""
 
@@ -42,6 +46,7 @@ def add_todo(
         todo_id=todo_id or str(uuid4()),
         description=description,
         owner=owner,
+        delivery_mode=delivery_mode,
     )
     if item.todo_id in board.items:
         raise ValueError(f"Todo 已存在：{item.todo_id}")

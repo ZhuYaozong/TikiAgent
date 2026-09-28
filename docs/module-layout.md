@@ -29,6 +29,7 @@ src/tikiagent/
 ├── runtime/                # 单 Agent 执行生命周期
 │   ├── react.py
 │   ├── resumable.py
+│   ├── guard.py             # 实际工具预算与重复失败保护
 │   └── models.py
 ├── orchestration/          # 多 Agent 协作与控制流
 │   ├── workflow.py
@@ -41,6 +42,7 @@ src/tikiagent/
 │   ├── environment.py
 │   ├── research.py
 │   ├── artifacts.py
+│   ├── inspection.py        # 独立复读只读调查的环境证据
 │   └── reports.py
 ├── context/
 │   ├── builder.py          # 检索并组装 Base Context
