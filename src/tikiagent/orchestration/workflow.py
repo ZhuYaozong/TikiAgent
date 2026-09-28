@@ -150,6 +150,7 @@ class MultiAgentWorkflow:
             task_board = create_task_board(
                 task=state["task"],
                 owners=list(plan.required_specialists),
+                code_task_mode=plan.code_task_mode,
             )
             updates = {
                 "supervisor_plan": plan,
@@ -168,6 +169,18 @@ class MultiAgentWorkflow:
             context_refs=self._supervisor_context_refs(decision_state),
         )
         decision = self.supervisor.decide(decision_state, base_context)
+        # 即便注入的 Supervisor 忽略预算，Graph 也不继续派发有风险的循环。
+        if decision.action == "delegate" and (
+            state["delegation_count"] >= state["max_delegations"]
+            or (decision.target_agent == "code_agent" and (
+                state.get("code_tool_call_count", 0) >= state.get("max_code_tool_calls", 60)
+                or state["specialist_results"].get("code_agent", {}).get("stop_reason")
+            ))
+        ):
+            decision = SupervisorDecision(
+                action="stop", target_agent=None, instruction="",
+                reason="Graph 执行保护：委派/工具预算耗尽或重复失败，请根据失败证据调整任务后重试",
+            )
         if decision.action == "finish":
             unverified, incomplete_todos = self._finish_guard_failures(
                 decision_state
@@ -221,6 +234,7 @@ class MultiAgentWorkflow:
             from_agent="supervisor",
             to_agent=target,
             todo_id=todo.todo_id,
+            delivery_mode=todo.delivery_mode,
             instruction=decision.instruction,
             # 应用显式选中的跨 Turn Result 必须随 Handoff 到达 Specialist；
             # Retriever 仍会强制同 Session 与 Profile record type 边界。
@@ -322,7 +336,9 @@ class MultiAgentWorkflow:
             raise RuntimeError("CodeAgent 未配置")
         previous_report = state["specialist_verifications"].get("code_agent")
         phase = (
-            "debugging"
+            "inspection"
+            if handoff.delivery_mode == "inspection"
+            else "debugging"
             if previous_report is not None and not previous_report.passed
             else "coding"
         )
@@ -393,6 +409,7 @@ class MultiAgentWorkflow:
         )
         return {
             "current_agent": "verification_gate",
+            "code_tool_call_count": state.get("code_tool_call_count", 0) + len(result.tool_results),
             "latest_handoff": completed,
             "task_board": task_board,
             "history_cursor": self.history_store.cursor(),

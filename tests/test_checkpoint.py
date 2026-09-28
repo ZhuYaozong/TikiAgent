@@ -1,6 +1,7 @@
 """双层快照、原子 Checkpoint 与 revision 测试。"""
 
 import json
+import hashlib
 
 import pytest
 
@@ -107,3 +108,15 @@ def test_checksum_detects_accidental_checkpoint_change(tmp_path) -> None:
 
     with pytest.raises(CheckpointIntegrityError, match="checksum"):
         store.load(value.checkpoint_id)
+
+
+def test_legacy_checkpoint_without_loop_guard_still_loads_with_original_checksum(tmp_path):
+    store = JsonCheckpointStore(tmp_path / "checkpoints")
+    payload = checkpoint().model_dump(mode="json")
+    payload["react_snapshot"].pop("loop_guard")
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    envelope = {"checksum": hashlib.sha256(canonical).hexdigest(), "payload": payload}
+    (tmp_path / "checkpoints/checkpoint-1.json").write_text(json.dumps(envelope), encoding="utf-8")
+    loaded = store.load("checkpoint-1")
+    assert loaded.react_snapshot.loop_guard == {}
+    assert loaded.revision == 1

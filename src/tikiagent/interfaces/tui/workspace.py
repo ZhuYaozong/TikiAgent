@@ -17,11 +17,20 @@ class ReadOnlyWorkspaceSnapshotter:
         self.max_entries = max_entries
 
     def scan(self, session_id: str) -> tuple[WorkspaceEntry, ...]:
+        session_root = self.session_root(session_id)
+        return self._scan_root(session_root)
+
+    def session_root(self, session_id: str) -> Path:
+        """校验本地展示路径；不会把它写入 Agent Context 或 History。"""
+
         if not self._SAFE_SESSION.fullmatch(session_id):
             raise ValueError("Session ID 包含不安全路径字符")
         session_root = (self.root / session_id).resolve()
         if not session_root.is_relative_to(self.root):
             raise ValueError("Workspace Snapshot 不能离开 workspaces 根目录")
+        return session_root
+
+    def _scan_root(self, session_root: Path) -> tuple[WorkspaceEntry, ...]:
         if not session_root.exists():
             return ()
         entries: list[WorkspaceEntry] = []

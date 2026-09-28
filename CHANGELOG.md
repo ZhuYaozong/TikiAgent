@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- 为只读调查增加独立验收模式，避免因没有修改文件而反复创建报告；debugging 阶段支持新建缺失文件。
+- 为正式 CodeAgent 增加实际工具调用预算和相同参数重复失败保护；暂停/恢复保留已消耗预算，停止时保留失败证据并返回最终原因。
+- Python 命令别名绑定项目解释器；模型请求支持有限超时和重试配置。
+- TUI 增加纯本地 `/paths`，展示 Workspace 与 History/Handoff 等存储位置。
+
 ### Changed
 
 - 按职责分离 Agent 角色、单 Agent Runtime、多 Agent Orchestration、Verification、Tools、Providers 和 Interfaces；Context 与 Harness 按子域组织。

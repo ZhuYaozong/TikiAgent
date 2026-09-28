@@ -2,7 +2,9 @@
 
 from time import perf_counter
 from typing import Any
+import os
 import subprocess
+import sys
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -59,11 +61,17 @@ def register_command_tool(
         output_limit: int = 8_000,
     ) -> dict[str, Any]:
         working_directory = workspace.require_directory(cwd)
+        # 模型常用别名统一到启动 TikiAgent 的解释器；显式路径保持调用方选择。
+        actual_command = list(command)
+        if command[0].casefold() in {"python", "python.exe", "python3", "python3.exe"}:
+            actual_command[0] = sys.executable
+        command_env = os.environ.copy()
+        command_env["PATH"] = str(os.path.dirname(sys.executable)) + os.pathsep + command_env.get("PATH", "")
         started_at = perf_counter()
 
         try:
             completed = subprocess.run(
-                command,
+                actual_command,
                 cwd=working_directory,
                 capture_output=True,
                 text=True,
@@ -72,6 +80,7 @@ def register_command_tool(
                 timeout=timeout_seconds,
                 shell=False,
                 check=False,
+                env=command_env,
             )
         except FileNotFoundError as error:
             raise ToolExecutionError(
@@ -90,7 +99,7 @@ def register_command_tool(
                 output_limit,
             )
             return CommandResult(
-                command=command,
+                command=actual_command,
                 cwd=cwd,
                 exit_code=None,
                 stdout=stdout,
@@ -111,7 +120,7 @@ def register_command_tool(
             output_limit,
         )
         return CommandResult(
-            command=command,
+            command=actual_command,
             cwd=cwd,
             exit_code=completed.returncode,
             stdout=stdout,

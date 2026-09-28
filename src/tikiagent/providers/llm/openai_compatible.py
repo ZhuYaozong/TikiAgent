@@ -26,6 +26,8 @@ class OpenAICompatibleClient:
         self.client = client or OpenAI(
             api_key=settings.api_key,
             base_url=settings.base_url,
+            timeout=settings.timeout_seconds,
+            max_retries=settings.max_retries,
         )
 
     @staticmethod

@@ -109,6 +109,8 @@ class ReActRunSnapshot(BaseModel):
     pending_tool_calls: list[PendingModelToolCall] = Field(min_length=1)
     pending_results: list[ToolResult] = Field(default_factory=list)
     next_tool_index: int = Field(ge=0)
+    # 旧快照默认空；恢复时至少从已有 ToolResult 恢复消耗，不从 Trace 猜测。
+    loop_guard: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_ordered_progress(self) -> "ReActRunSnapshot":

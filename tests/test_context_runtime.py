@@ -243,6 +243,8 @@ def test_dynamic_tool_view_and_exposure_guard_are_separate_from_permission() -> 
     )
 
     assert "write_file" in coding.exposed_names
-    assert "write_file" not in debugging.exposed_names
+    assert "write_file" in debugging.exposed_names
     assert ToolExposureGuard.allows("edit_file", debugging)
-    assert not ToolExposureGuard.allows("write_file", debugging)
+    inspection = ToolSelector().select(agent="code_agent", phase="inspection", registry=value)
+    assert not ToolExposureGuard.allows("write_file", inspection)
+    assert not ToolExposureGuard.allows("run_command", inspection)

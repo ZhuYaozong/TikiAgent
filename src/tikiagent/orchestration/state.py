@@ -1,6 +1,6 @@
 """LangGraph 工作流的结构化 TikiState。"""
 
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, NotRequired, TypedDict
 from uuid import uuid4
 
 from pydantic import TypeAdapter
@@ -128,6 +128,8 @@ class TikiState(TypedDict):
     supervisor_decision: SupervisorDecision | None
     delegation_count: int
     max_delegations: int
+    code_tool_call_count: NotRequired[int]
+    max_code_tool_calls: NotRequired[int]
     latest_handoff: Handoff | None
     task_board: TaskBoard
     specialist_results: Annotated[
@@ -172,7 +174,12 @@ def restore_tiki_state(payload: dict[str, Any]) -> TikiState:
     """严格按 canonical TikiState schema 恢复 Graph 输入。"""
 
     # v0.6a2 Checkpoint 尚无该字段；迁移时只补空引用，不猜测历史。
-    migrated = {"session_context_refs": [], **payload}
+    migrated = {
+        "session_context_refs": [],
+        "code_tool_call_count": 0,
+        "max_code_tool_calls": 60,
+        **payload,
+    }
     return _TIKI_STATE_ADAPTER.validate_python(migrated)
 
 
@@ -216,6 +223,8 @@ def create_initial_state(
         "supervisor_decision": None,
         "delegation_count": 0,
         "max_delegations": 1,
+        "code_tool_call_count": 0,
+        "max_code_tool_calls": 60,
         "latest_handoff": None,
         "task_board": TaskBoard(),
         "specialist_results": {},
