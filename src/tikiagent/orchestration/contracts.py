@@ -135,6 +135,7 @@ class ResearchResult(ControlModel):
     stop_reason: str | None = None
     delivery_status: Literal["ready", "partial", "none"] | None = None
     finalization_status: str = "not_needed"
+    finalization_diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 
 class CodeResult(ControlModel):
@@ -152,6 +153,7 @@ class CodeResult(ControlModel):
     stop_reason: str | None = None
     delivery_status: Literal["ready", "partial", "none"] | None = None
     finalization_status: str = "not_needed"
+    finalization_diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 
 class Handoff(ControlModel):

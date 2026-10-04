@@ -98,7 +98,14 @@ class VerificationGate:
 
         verifier = self.verifiers[handoff.to_agent]
         delivery = getattr(result, "delivery_status", None)
-        if delivery in {"none", "partial"} or (delivery is None and isinstance(result, CodeResult) and not result.completed):
+        # 部分研究交付不等于验收失败：有真实证据且已完成收尾时交给 Verifier 判断。
+        reviewable_partial = (
+            isinstance(result, ResearchResult)
+            and delivery == "partial"
+            and result.finalization_status == "completed"
+            and bool(result.findings and result.sources)
+        )
+        if (delivery in {"none", "partial"} and not reviewable_partial) or (delivery is None and isinstance(result, CodeResult) and not result.completed):
             return execution_failure(handoff, result)
         related_kwargs = {"research_results": research_results} if getattr(verifier, "supports_related_results", False) else {}
         if getattr(verifier, "supports_context", False):

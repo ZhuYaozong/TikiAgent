@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from tikiagent.context.compression.models import ContextUsage
@@ -25,6 +25,7 @@ class AgentRunResult:
     stop_reason: str | None = None
     delivery_status: Literal["ready", "partial", "none"] | None = None
     finalization_status: Literal["not_needed", "completed", "failed", "already_consumed"] = "not_needed"
+    finalization_diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

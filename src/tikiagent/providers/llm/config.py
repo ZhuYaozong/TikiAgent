@@ -26,13 +26,14 @@ class ModelSettings:
     max_retries: int = 1
     context_limit: int = 32_000
     max_output_tokens: int = 2_000
+    safety_margin: int = 0
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
             raise ValueError("模型请求超时必须是有限正数")
         if self.max_retries < 0 or self.max_retries > 3:
             raise ValueError("模型请求重试次数必须在 0～3 之间")
-        if not 0 < self.max_output_tokens < self.context_limit:
+        if self.max_output_tokens <= 0 or not 0 < self.max_output_tokens + self.safety_margin < self.context_limit or self.safety_margin < 0:
             raise ValueError("输出预算必须大于零且小于模型窗口")
 
     @classmethod

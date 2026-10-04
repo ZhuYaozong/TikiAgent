@@ -30,14 +30,32 @@ class OpenAICompatibleClient:
         self,
         settings: ModelSettings,
         client: Any | None = None,
+        observer=None,
     ) -> None:
         self.settings = settings
+        self.observer = observer
         self.client = client or OpenAI(
             api_key=settings.api_key,
             base_url=settings.base_url,
             timeout=settings.timeout_seconds,
             max_retries=settings.max_retries,
         )
+
+    def _observe(self, response):
+        """每次供应商响应均记录预算和安全诊断，包括结构化解析失败之前。"""
+        choice = response.choices[0] if getattr(response, "choices", None) else None
+        usage = getattr(response, "usage", None)
+        data = {"finish_reason": getattr(choice, "finish_reason", None),
+                "max_output_tokens": self.settings.max_output_tokens,
+                "usage": usage.model_dump() if hasattr(usage, "model_dump") else {},
+                "tool_names": [c.function.name for c in (getattr(getattr(choice, "message", None), "tool_calls", None) or [])]}
+        if self.observer:
+            try:
+                self.observer(data)
+            except OSError:
+                # 审计写入失败不能把已取得的模型响应变成重新付费请求。
+                pass
+        return data
 
     @staticmethod
     def _convert_tools(
@@ -74,6 +92,7 @@ class OpenAICompatibleClient:
                 **({"tools": self._convert_tools(tool_schemas), "tool_choice": "auto"} if tool_schemas else {}),
                 max_tokens=self.settings.max_output_tokens,
             )
+            response_details = self._observe(response)
             if not getattr(response, "choices", None):
                 raise ValueError(f"模型返回非 ChatCompletion 响应：type={type(response).__name__}，缺少 choices")
             message = response.choices[0].message
@@ -107,7 +126,8 @@ class OpenAICompatibleClient:
             final_text=message.content,
             diagnostics={"response_type": type(response).__name__, "finish_reason": getattr(response.choices[0], "finish_reason", None),
                          "has_text": bool(message.content and message.content.strip()), "has_tool_calls": bool(model_tool_calls),
-                         "response_retries": attempt, "empty_response_retries": attempt if request_messages == list(messages) else 0},
+                         "response_retries": attempt, "empty_response_retries": attempt if request_messages == list(messages) else 0,
+                         **response_details},
         )
 
     def complete_once(self, messages, tool_schemas):
@@ -137,6 +157,7 @@ class OpenAICompatibleClient:
                 messages=request_messages,
                 max_tokens=self.settings.max_output_tokens,
             )
+            details = self._observe(response)
             if not getattr(response, "choices", None):
                 raise StructuredOutputError(f"模型返回非 ChatCompletion 响应：type={type(response).__name__}，缺少 choices")
             content = response.choices[0].message.content
@@ -167,7 +188,7 @@ class OpenAICompatibleClient:
                 )
 
         raise StructuredOutputError(
-            f"模型在 {'1' if _single else '2'} 次请求内未返回合法结构化结果：{last_error}"
+            f"模型在 {'1' if _single else '2'} 次请求内未返回合法结构化结果：{last_error}", details
         )
 
     def _check_budget(self, messages, tools) -> None:
@@ -175,5 +196,5 @@ class OpenAICompatibleClient:
         from tikiagent.context.compression.monitor import CharacterTokenEstimator
 
         usage = CharacterTokenEstimator().estimate({"messages": list(messages), "tools": tools})
-        if usage + self.settings.max_output_tokens > self.settings.context_limit:
+        if usage + self.settings.max_output_tokens + self.settings.safety_margin > self.settings.context_limit:
             raise ValueError("最终模型请求超过输入预算，已阻止发送")

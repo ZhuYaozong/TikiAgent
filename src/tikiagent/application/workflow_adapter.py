@@ -80,10 +80,12 @@ class TikiWorkflowAdapter:
         workflow_factory: WorkflowFactory,
         checkpoint_store: JsonCheckpointStore,
         event_bus: EventBus,
+        request_budget=None,
     ) -> None:
         self.workflow_factory = workflow_factory
         self.checkpoint_store = checkpoint_store
         self.event_bus = event_bus
+        self.request_budget = request_budget
 
     def start(
         self,
@@ -94,6 +96,8 @@ class TikiWorkflowAdapter:
         causation_id: str | None = None,
     ) -> WorkflowOutcome:
         task_id, workspace_id = self._require_task_scope(scope)
+        if self.request_budget:
+            self.request_budget.bind(scope.session_id, task_id)
         self.event_bus.emit(
             "workflow_started",
             scope=scope,
@@ -221,6 +225,8 @@ class TikiWorkflowAdapter:
         reconciliation: ReconcileResult | None = None,
     ) -> WorkflowOutcome:
         workspace_id = checkpoint.scope.workspace_id
+        if self.request_budget:
+            self.request_budget.bind(scope.session_id, checkpoint.scope.task_id)
         workflow = self.workflow_factory(scope.session_id, workspace_id)
         self.event_bus.emit(
             "workflow_resumed",

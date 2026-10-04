@@ -119,6 +119,25 @@ def test_tampered_research_source_fails_provenance(tmp_path: Path) -> None:
     assert any("source_observation_provenance" in item for item in report.failures)
 
 
+def test_partial_research_is_reviewed_not_automatically_rejected(tmp_path: Path) -> None:
+    result = research_result().model_copy(update={
+        "delivery_status": "partial", "finalization_status": "completed",
+        "stop_reason": "tool_budget_exhausted",
+    })
+    report = gate(tmp_path).verify(
+        handoff=completed_handoff("research_agent", result.result_id),
+        raw_result=result.model_dump(mode="json"), specialist_results={},
+    )
+    assert report.passed
+    # 仍必须校验证据来源，部分交付不是自动通过的后门。
+    result.sources[0].url = "https://invented.example/source"
+    report = gate(tmp_path).verify(
+        handoff=completed_handoff("research_agent", result.result_id),
+        raw_result=result.model_dump(mode="json"), specialist_results={},
+    )
+    assert not report.passed
+
+
 def test_mismatched_result_id_is_rejected_before_strategy(tmp_path: Path) -> None:
     result = research_result()
     report = gate(tmp_path).verify(

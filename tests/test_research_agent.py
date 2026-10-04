@@ -70,10 +70,13 @@ class ScriptedStructuredModel:
 
     def complete_structured(self, messages, response_type):
         del messages
+        import hashlib
+        ref = "s-" + hashlib.sha256(self.source_url.encode()).hexdigest()[:12]
         return response_type.model_validate(
             {
                 "summary": "summary",
-                "findings": ["finding"],
+                "findings": [{"text": "finding", "source_ids": [ref]}],
+                "delivery_status": "ready",
                 "sources": [
                     {
                         "title": "model title",

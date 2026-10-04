@@ -59,6 +59,7 @@ class ContextRuntime:
         local_compressor: LocalCompressor | None = None,
         compression_policy: CompressionPolicy | None = None,
         observer=None,
+        budget_resolver=None,
     ) -> None:
         self.budget = budget or ContextBudget()
         self.prompt_assembler = PromptAssembler(profiles)
@@ -69,6 +70,7 @@ class ContextRuntime:
         self.local_compressor = local_compressor or RuleBasedLocalCompressor()
         self.compression_policy = compression_policy or CompressionPolicy()
         self.observer = observer
+        self.budget_resolver = budget_resolver
 
     def prepare(
         self,
@@ -79,6 +81,9 @@ class ContextRuntime:
         response_type: type[ResponseModel] | None = None,
     ) -> PreparedModelCall:
         phase = base_context.working_memory.phase
+        # 同一阶段的 Context 与 API 必须采用同一输出预留量。
+        if self.budget_resolver:
+            self.budget = self.budget_resolver(base_context.agent, phase)
         engines = {id(e): e for e in (getattr(self.base_compressor, "engine", None), getattr(self.local_compressor, "engine", None)) if e is not None}
         for engine in engines.values():
             engine.calls = max(engine.calls, base_context.working_memory.compression_calls)

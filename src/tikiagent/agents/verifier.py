@@ -19,6 +19,10 @@ from tikiagent.tools.models import ToolExecutionError, ToolError, ToolResult
 from tikiagent.tools.registry import ToolRegistry, RegisteredTool
 from tikiagent.runtime.lifecycle import final_context, complete_once
 from tikiagent.harness.persistence.finalization import FinalizationLedger
+from tikiagent.providers.llm.staged import at_stage
+from tikiagent.runtime.diagnostics import finalization_error
+from tikiagent.harness.persistence.budget import RequestBudgetExceeded
+from tikiagent.runtime.guard import ToolLoopGuard
 from tikiagent.providers.llm.openai_compatible import ModelOutputError
 from tikiagent.context.preparation import ContextBudgetExceeded
 
@@ -42,7 +46,8 @@ class VerifierAgent:
     supports_context = True
 
     def __init__(self, model, registry: ToolRegistry, *, context_runtime=None, observer=None,
-                 max_steps: int = 6, max_tool_calls: int = 8, finalizations=None):
+                 max_steps: int = 6, max_tool_calls: int = 8, finalizations=None,
+                 deduplicate=False, progress_revision=None):
         if min(max_steps, max_tool_calls) < 1:
             raise ValueError("验证取证预算必须为正数")
         self.model = model
@@ -52,6 +57,7 @@ class VerifierAgent:
         self.max_steps = max_steps
         self.max_tool_calls = max_tool_calls
         self.finalizations = finalizations or FinalizationLedger()
+        self.deduplicate, self.progress_revision = deduplicate, progress_revision
 
     def verify(self, *, handoff, result, specialist_results, execution_context, base_context=None):
         del specialist_results
@@ -73,6 +79,8 @@ class VerifierAgent:
             registry.register(self.registry.get(name))
         submitted = None
         observed = set()
+        evidence_cache = {}
+        diagnosis = {}
 
         def read_evidence(evidence_id, offset=0):
             if evidence_id not in records:
@@ -135,12 +143,13 @@ class VerifierAgent:
                     registry=final_registry if finalizing else registry)
                 context = prepared.base_context
                 local.replace(prepared.local_memory)
-                response = (complete_once(self.model, messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
+                response = (complete_once(at_stage(self.model, "verifier_final"), messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
                             if finalizing else self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas))
-            except (ModelOutputError, ContextBudgetExceeded) as error:
+            except (ModelOutputError, ContextBudgetExceeded, RequestBudgetExceeded) as error:
+                diagnosis = finalization_error(error)
                 self._emit("model_response", execution_context, handoff.handoff_id,
                            {"agent": "verifier", "stage": stage, "error_type": type(error).__name__,
-                            **getattr(error, "diagnostics", {})})
+                            **finalization_error(error)})
                 reason = f"验证未完成：{type(error).__name__}"
                 if finalizing:
                     break
@@ -150,9 +159,10 @@ class VerifierAgent:
                 # 最终一次请求失败也必须交回结构化结论，不能重试或伪造 PASS。
                 if not finalizing:
                     raise
+                diagnosis = finalization_error(error)
                 reason = f"最终提交机会失败：{type(error).__name__}；尚未完成验收"
                 self._emit("model_response", execution_context, handoff.handoff_id,
-                           {"agent": "verifier", "stage": stage, "error_type": type(error).__name__})
+                           {"agent": "verifier", "stage": stage, **finalization_error(error)})
                 break
             self._emit("model_response", execution_context, handoff.handoff_id, {"agent": "verifier", "stage": stage, **response.diagnostics})
             step += 1
@@ -168,6 +178,9 @@ class VerifierAgent:
                     args = None  # Basic Validation 返回结构化错误，不执行 handler。
                 self._emit("tool_call_requested", execution_context, call.tool_call_id, {"tool_name": call.name, "agent": "verifier", "arguments": args})
                 rejection = None
+                revision = self.progress_revision() if self.progress_revision else "immutable"
+                key = (ToolLoopGuard.fingerprint(call.name, call.arguments_json), revision)
+                cached = evidence_cache.get(key) if self.deduplicate and call.name != "submit_verification" else None
                 if call.name == "submit_verification" and len(response.tool_calls) != 1:
                     rejection = ("verification_submission_must_be_single", "提交报告必须单独调用，先观察全部取证结果")
                 elif call.name != "submit_verification" and finalizing:
@@ -178,6 +191,11 @@ class VerifierAgent:
                     # 批量中被拒绝的调用仍有对应 ToolResult，不伪造执行，不丢失消息配对。
                     observation = ToolResult(tool_call_id=call.tool_call_id, tool_name=call.name, ok=False,
                         error=ToolError(code=rejection[0], message=rejection[1]))
+                elif cached is not None:
+                    # 仅复用本轮Verifier亲自取得的证据，不用CodeAgent的PASS代替独立验证。
+                    count += 1
+                    observation = ToolResult.model_validate({k: v for k, v in cached.items() if k != "evidence_id"}).model_copy(
+                        update={"tool_call_id": call.tool_call_id})
                 else:
                     if call.name != "submit_verification":
                         count += 1
@@ -189,13 +207,17 @@ class VerifierAgent:
                         raise RuntimeError("Verifier 不支持挂起审批")
                 self._emit("tool_result_received", execution_context, call.tool_call_id,
                            {"tool_name": call.name, "agent": "verifier", "tool_result": observation.model_dump(mode="json")})
-                if not rejection and call.name not in {"submit_verification", "read_evidence"}:
+                if cached is not None and not rejection:
+                    content = {**cached, "tool_call_id": call.tool_call_id}
+                elif not rejection and call.name not in {"submit_verification", "read_evidence"}:
                     evidence_id = f"verification:{uuid4()}"
                     records[evidence_id] = {"usable": self._usable(observation.model_dump()), "data": observation.model_dump(mode="json")}
                     observed.add(evidence_id)
                     content = {"evidence_id": evidence_id, **observation.model_dump(mode="json")}
                 else:
                     content = observation.model_dump(mode="json")
+                if not rejection and observation.ok and call.name != "submit_verification":
+                    evidence_cache[key] = content
                 messages.append({"role": "tool", "tool_call_id": call.tool_call_id, "content": json.dumps(content, ensure_ascii=False)})
             # 即使恰好耗尽预算，也要先让本轮全部结果成为完整交互。
             local.append(interaction_id=f"verify-{step}", assistant_message=ResearchAgent._canonical_assistant_message(response), tool_messages=messages)
@@ -204,7 +226,8 @@ class VerifierAgent:
 
         assessments, recommendation = submitted or ([], reason)
         if claimed:
-            self.finalizations.finish(identity, "completed" if submitted else "failed")
+            self.finalizations.finish(identity, "completed" if submitted else "failed",
+                                      {} if submitted else diagnosis or {"error_category": "invalid_submission"})
         passed = assessments_valid(handoff.acceptance_criteria, assessments, records)
         if submitted:
             category = "insufficient_evidence" if any(c.status == "insufficient_evidence" for c in assessments) or not assessments else "validation"

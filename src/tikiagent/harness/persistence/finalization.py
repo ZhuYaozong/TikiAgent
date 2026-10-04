@@ -34,13 +34,14 @@ class FinalizationLedger:
             return False
         return True
 
-    def finish(self, identity: str, status: str) -> None:
+    def finish(self, identity: str, status: str, diagnostics=None) -> None:
         if self.root is None:
             return
         key = hashlib.sha256(identity.encode()).hexdigest()
         path = self.root / f"{key}.json"
         value = json.loads(path.read_text(encoding="utf-8"))
         value.update(stage="finished", outcome=status)
+        value["diagnostics"] = diagnostics or {}
         temporary = path.with_suffix(f".{uuid4().hex}.tmp")
         try:
             with temporary.open("w", encoding="utf-8") as stream:
