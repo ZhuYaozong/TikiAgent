@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from tikiagent.application.models import ApprovalDetails
 
 
 TimelineKind = Literal[
@@ -84,6 +85,7 @@ class TuiViewState(TuiModel):
     checkpoint_id: str | None = None
     checkpoint_revision: int | None = Field(default=None, ge=1)
     approval_request_id: str | None = None
+    approval_details: ApprovalDetails | None = None
     execution_id: str | None = None
     attempt: int | None = Field(default=None, ge=1)
     tool_call_id: str | None = None

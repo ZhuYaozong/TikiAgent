@@ -5,7 +5,7 @@ import asyncio
 import threading
 
 from tikiagent.application.events import EventBus
-from tikiagent.application.models import ApplicationOutcome, EventScope
+from tikiagent.application.models import ApplicationOutcome, ApprovalDetails, EventScope
 from tikiagent.interfaces.tui.app import TikiTuiApp
 from tikiagent.interfaces.tui.modals import (
     ApprovalModal,
@@ -108,6 +108,13 @@ class FakeBackend:
             "status": status, "session_id": self.session_id, "task_id": "task-1", "run_id": "run-1",
             "checkpoint_id": "checkpoint-1", "checkpoint_revision": revision,
             "approval_request_id": "approval-1" if status == "awaiting_approval" else None,
+            "approval_details": ApprovalDetails(
+                request_id="approval-1", session_id=self.session_id, task_id="task-1",
+                workspace_id=self.workspace_id, tool_call_id="call-1", tool_name="run_command",
+                reason="安装依赖会改变运行环境，需要外部批准", rule_id="command.package-install.ask",
+                arguments={"command": ["python", "-m", "pip", "install", "rich"],
+                           "cwd": ".", "timeout_seconds": 30.0, "output_limit": 8000},
+            ).model_dump() if status == "awaiting_approval" else None,
             "execution_id": "execution-1", "attempt": 1,
             "tool_call_id": "call-1", "tool_name": "run_command", "message": status,
         })
@@ -206,6 +213,8 @@ def test_approval_modal_submits_resume_once(tmp_path: Path) -> None:
             assert isinstance(app.screen, ApprovalModal)
             modal = app.screen
             assert isinstance(modal, ApprovalModal)
+            assert modal.prompt.details.arguments["command"][-1] == "rich"
+            assert modal.prompt.can_approve
             modal.submit_once(True)
             modal.submit_once(True)
             await pilot.pause(); await app.workers.wait_for_complete(); await pilot.pause()

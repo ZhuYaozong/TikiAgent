@@ -188,3 +188,29 @@ ModalScreen {
 }
 
 .dialog-actions Button { margin-left: 1; }
+
+.approval-dialog {
+    width: 90%;
+    max-width: 96;
+    height: 85%;
+    max-height: 40;
+}
+
+#approval-content {
+    height: 1fr;
+    min-height: 1;
+}
+
+#approval-content Static {
+    height: auto;
+    margin-bottom: 1;
+}
+
+.approval-dialog .dialog-actions {
+    height: 3;
+}
+
+.approval-dialog .dialog-actions Button {
+    width: 1fr;
+    min-width: 10;
+}

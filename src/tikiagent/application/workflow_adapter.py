@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 from tikiagent.application.events import EventBus
+from tikiagent.application.approval_details import build_approval_details
 from tikiagent.application.models import (
     EventScope,
     ReconcileSubmission,
@@ -372,6 +373,15 @@ class TikiWorkflowAdapter:
         }
         status = status_map[checkpoint.execution_state]
         request = checkpoint.approval_request
+        # 只有当前待审批且请求与执行事实一致时，才提供可批准的显示详情。
+        details = None
+        if (
+            checkpoint.execution_state == "awaiting_approval"
+            and request is not None
+            and request.scope == checkpoint.scope
+            and request.tool_call == checkpoint.tool_call
+        ):
+            details = build_approval_details(request)
         return WorkflowOutcome(
             status=status,
             task_id=checkpoint.scope.task_id,
@@ -381,6 +391,7 @@ class TikiWorkflowAdapter:
             checkpoint_id=checkpoint.checkpoint_id,
             checkpoint_revision=checkpoint.revision,
             approval_request_id=request.request_id if request else None,
+            approval_details=details,
             approval_fingerprint=request.fingerprint if request else None,
             execution_id=checkpoint.identity.execution_id,
             attempt=checkpoint.identity.attempt,

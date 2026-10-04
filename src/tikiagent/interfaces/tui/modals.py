@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+import json
 
 from pydantic import BaseModel, ConfigDict, Field
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Static
+from textual.widgets import Button, Collapsible, Input, Label, Static
+
+from tikiagent.application.models import ApprovalDetails
 
 
 class ModalModel(BaseModel):
@@ -23,6 +26,25 @@ class ApprovalPrompt(ModalModel):
     tool_name: str | None = None
     tool_call_id: str | None = None
     checkpoint_id: str | None = None
+    details: ApprovalDetails | None = None
+
+    @property
+    def can_approve(self) -> bool:
+        """缺少实际内容或作用域不匹配时，显示层也不能发起批准。"""
+        details = self.details
+        if details is None or not self.checkpoint_id:
+            return False
+        if (
+            details.request_id != self.request_id
+            or details.session_id != self.session_id
+            or details.tool_call_id != self.tool_call_id
+            or details.tool_name != self.tool_name
+        ):
+            return False
+        if details.tool_name == "run_command":
+            argv = details.arguments.get("command")
+            return isinstance(argv, list) and bool(argv) and all(isinstance(arg, str) for arg in argv)
+        return True
 
 
 class RecoverySubmission(ModalModel):
@@ -42,19 +64,52 @@ class ApprovalModal(ModalScreen[bool | None]):
         self._submitted = False
 
     def compose(self) -> ComposeResult:
-        with Vertical(classes="dialog"):
-            yield Label("Human Approval Required", classes="dialog-title")
-            yield Static("\n".join([
-                f"Tool:       {self.prompt.tool_name or '-'}",
-                f"ToolCall:   {self.prompt.tool_call_id or '-'}",
-                f"Checkpoint: {self.prompt.checkpoint_id or '-'}",
-                f"Revision:   {self.prompt.expected_revision}",
-                "", "决定将交给 Controller.resume() 并由权威 Checkpoint 校验。",
-            ]))
+        with Vertical(classes="dialog approval-dialog"):
+            yield Label("需要人工批准", classes="dialog-title")
+            # 详情可滚动，按钮固定在底部；长 argv 不省略审批所需信息。
+            with VerticalScroll(id="approval-content"):
+                details = self.prompt.details
+                if not self.prompt.can_approve or details is None:
+                    yield Static(
+                        "审批详情缺失或与当前请求不匹配，暂不能批准。\n"
+                        "请选择稍后，并使用 /status 重新读取审批信息。",
+                        id="approval-missing", classes="danger", markup=False,
+                    )
+                else:
+                    yield Static(
+                        f"工具：{details.tool_name}\n"
+                        f"审批原因：{details.reason}\n"
+                        f"Workspace：{details.workspace_id}",
+                        id="approval-overview", markup=False,
+                    )
+                    if details.tool_name == "run_command":
+                        args = details.arguments
+                        yield Static(
+                            f"工作目录：Workspace 下的 {args.get('cwd', '.')}\n"
+                            f"超时：{args.get('timeout_seconds', '-')} 秒\n"
+                            "命令参数（argv，逐项传递，不经过 Shell）：\n"
+                            + json.dumps(args["command"], ensure_ascii=False, indent=2),
+                            id="approval-command", markup=False,
+                        )
+                    yield Static(
+                        "完整参数（敏感值已遮蔽）：\n"
+                        + json.dumps(details.arguments, ensure_ascii=False, indent=2),
+                        id="approval-arguments", markup=False,
+                    )
+                with Collapsible(title="技术详情", collapsed=True, id="approval-technical"):
+                    yield Static("\n".join([
+                        f"ToolCall：{self.prompt.tool_call_id or '-'}",
+                        f"Checkpoint：{self.prompt.checkpoint_id or '-'}",
+                        f"Revision：{self.prompt.expected_revision}",
+                        f"Session：{self.prompt.session_id}",
+                        f"Task：{details.task_id if details else '-'}",
+                        f"审批规则：{details.rule_id if details else '-'}",
+                    ]), markup=False)
             with Horizontal(classes="dialog-actions"):
                 yield Button("稍后", id="approval-later")
                 yield Button("拒绝", id="approval-deny", variant="error")
-                yield Button("批准", id="approval-approve", variant="success")
+                yield Button("批准本次", id="approval-approve", variant="success",
+                             disabled=not self.prompt.can_approve)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "approval-later":
@@ -66,6 +121,8 @@ class ApprovalModal(ModalScreen[bool | None]):
 
     def submit_once(self, approved: bool) -> None:
         if self._submitted:
+            return
+        if approved and not self.prompt.can_approve:
             return
         self._submitted = True
         for button in self.query(Button):
