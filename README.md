@@ -83,6 +83,8 @@ ResearchAgent 仅使用 Tavily 搜索与提取网页；本地文件、Python 环
 
 VerifierAgent 使用独立上下文和受控工具读取证据，逐项返回通过、失败或证据不足。Verification Gate 保留硬约束：最新 `result_id/handoff_id/todo_id` 绑定、来源可追溯、验收完整覆盖、有据可查；模型不能直接指定整个任务通过。只有 Supervisor 可以决定结束。
 
+验证取证达到预算后，保留一次仅提交报告的收尾机会，不增加取证次数；未能提交合法报告会明确报告验证未完成，而不是自动放行。
+
 Python 环境任务可查询实际解释器与发行包版本、检查导入；安装仍必须走原来的审批/Checkpoint 链。已经满足要求的依赖不需要重复安装或创建无关测试。验证工具的隔离子进程、临时测试副本**不是强沙箱**，请只运行可信代码。详见 [验证契约与边界](docs/verification-agent.md)。
 
 ## Quick Start

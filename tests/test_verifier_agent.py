@@ -27,7 +27,8 @@ class Script:
 
     def complete(self, **request):
         self.requests.append(request)
-        return next(self.responses)
+        response = next(self.responses)
+        return response(**request) if callable(response) else response
 
 
 def setup(tmp_path, responses, **kwargs):
@@ -67,7 +68,7 @@ def test_evidence_read_then_submit_and_gate_identity(tmp_path):
     [call("submit_verification", {"assessments": [{"criterion_id": "other", "status": "passed", "evidence_refs": [], "reason": "遗漏原标准"}], "recommendation": "通过"})],
 ])
 def test_invalid_submission_never_passes(tmp_path, responses):
-    _, verifier, result, handoff, context = setup(tmp_path, responses, max_steps=1)
+    _, verifier, result, handoff, context = setup(tmp_path, [*responses, ModelResponse(assistant_message={"role": "assistant"})], max_steps=1)
     report = verifier.verify(handoff=handoff, result=result, specialist_results={}, execution_context=context)
     assert not report.passed
 
@@ -80,7 +81,7 @@ def test_failed_command_cannot_be_positive_evidence(tmp_path):
 
 
 def test_write_exposure_denied_without_touching_workspace(tmp_path):
-    _, verifier, result, handoff, context = setup(tmp_path, [call("write_file", {"path": "evil", "content": "bad"})], max_steps=1)
+    _, verifier, result, handoff, context = setup(tmp_path, [call("write_file", {"path": "evil", "content": "bad"}), ModelResponse(assistant_message={"role": "assistant"})], max_steps=1)
     report = verifier.verify(handoff=handoff, result=result, specialist_results={}, execution_context=context)
     assert not report.passed and not (tmp_path / "evil").exists()
 
