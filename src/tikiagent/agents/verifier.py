@@ -17,6 +17,10 @@ from tikiagent.orchestration.requirements import CriterionAssessment, assessment
 from tikiagent.tools.dispatcher import Dispatcher
 from tikiagent.tools.models import ToolExecutionError, ToolError, ToolResult
 from tikiagent.tools.registry import ToolRegistry, RegisteredTool
+from tikiagent.runtime.lifecycle import final_context, complete_once
+from tikiagent.harness.persistence.finalization import FinalizationLedger
+from tikiagent.providers.llm.openai_compatible import ModelOutputError
+from tikiagent.context.preparation import ContextBudgetExceeded
 
 
 class ReadEvidenceArgs(BaseModel):
@@ -38,7 +42,7 @@ class VerifierAgent:
     supports_context = True
 
     def __init__(self, model, registry: ToolRegistry, *, context_runtime=None, observer=None,
-                 max_steps: int = 6, max_tool_calls: int = 8):
+                 max_steps: int = 6, max_tool_calls: int = 8, finalizations=None):
         if min(max_steps, max_tool_calls) < 1:
             raise ValueError("验证取证预算必须为正数")
         self.model = model
@@ -47,6 +51,7 @@ class VerifierAgent:
         self.observer = observer
         self.max_steps = max_steps
         self.max_tool_calls = max_tool_calls
+        self.finalizations = finalizations or FinalizationLedger()
 
     def verify(self, *, handoff, result, specialist_results, execution_context, base_context=None):
         del specialist_results
@@ -106,9 +111,16 @@ class VerifierAgent:
         category = "model_response"
         reason = "Verifier 未提交结构化验收报告"
         step = 0
+        identity = f"{execution_context.scope.session_id}/{execution_context.scope.task_id}/verifier/{result.result_id}"
+        claimed = False
         while True:
             # 取证与提交分开计费：最多 max_steps 轮取证，再额外给一次只提交的机会。
             finalizing = count >= self.max_tool_calls or step >= self.max_steps
+            if finalizing:
+                claimed = self.finalizations.claim(identity, "verification_finalization")
+                if not claimed:
+                    reason = "验证收尾机会已消费，不自动重发未知请求"
+                    break
             stage = "verification_finalization" if finalizing else "verification"
             budget_hint = json.dumps({"stage": stage,
                 "remaining_evidence_calls": max(0, self.max_tool_calls - count),
@@ -117,11 +129,31 @@ class VerifierAgent:
                 "instruction": "只根据已有证据单独提交报告，证据不足如实填写；同一证据可支持多条验收条件。" if finalizing else "证据足够就单独提交报告，避免重复取证。"}, ensure_ascii=False)
             context = context.model_copy(update={"working_memory": context.working_memory.model_copy(
                 update={"phase": stage, "instruction": instruction + "\n验证运行状态：" + budget_hint})})
-            prepared = self.context_runtime.prepare(base_context=context, local_memory=local.memory,
-                registry=final_registry if finalizing else registry)
-            context = prepared.base_context
-            local.replace(prepared.local_memory)
-            response = self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
+            try:
+                prepare = (lambda **kwargs: final_context(self.context_runtime, **kwargs)) if finalizing else self.context_runtime.prepare
+                prepared = prepare(base_context=context, local_memory=local.memory,
+                    registry=final_registry if finalizing else registry)
+                context = prepared.base_context
+                local.replace(prepared.local_memory)
+                response = (complete_once(self.model, messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
+                            if finalizing else self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas))
+            except (ModelOutputError, ContextBudgetExceeded) as error:
+                self._emit("model_response", execution_context, handoff.handoff_id,
+                           {"agent": "verifier", "stage": stage, "error_type": type(error).__name__,
+                            **getattr(error, "diagnostics", {})})
+                reason = f"验证未完成：{type(error).__name__}"
+                if finalizing:
+                    break
+                count = self.max_tool_calls
+                continue
+            except Exception as error:
+                # 最终一次请求失败也必须交回结构化结论，不能重试或伪造 PASS。
+                if not finalizing:
+                    raise
+                reason = f"最终提交机会失败：{type(error).__name__}；尚未完成验收"
+                self._emit("model_response", execution_context, handoff.handoff_id,
+                           {"agent": "verifier", "stage": stage, "error_type": type(error).__name__})
+                break
             self._emit("model_response", execution_context, handoff.handoff_id, {"agent": "verifier", "stage": stage, **response.diagnostics})
             step += 1
             if finalizing:
@@ -171,6 +203,8 @@ class VerifierAgent:
                 break
 
         assessments, recommendation = submitted or ([], reason)
+        if claimed:
+            self.finalizations.finish(identity, "completed" if submitted else "failed")
         passed = assessments_valid(handoff.acceptance_criteria, assessments, records)
         if submitted:
             category = "insufficient_evidence" if any(c.status == "insufficient_evidence" for c in assessments) or not assessments else "validation"
@@ -184,7 +218,9 @@ class VerifierAgent:
             evidence_records=persisted, checks=[VerificationCheck(name=c.criterion_id, passed=c.status == "passed", evidence=c.reason) for c in assessments],
             failures=[] if passed else [reason], evidence=list(records), recommendation=recommendation,
             failure_category=None if passed else category, retryable=None if passed else category in {"validation", "insufficient_evidence"},
-            blocking_reason=None if passed else reason)
+            blocking_reason=None if passed else reason,
+            verification_status="assessed" if submitted else "not_performed", failure_scope="todo" if submitted else "run",
+            allowed_actions=[] if passed else ["stop", "replan"])
 
     @staticmethod
     def _usable(observation):

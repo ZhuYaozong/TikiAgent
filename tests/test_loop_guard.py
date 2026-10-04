@@ -42,10 +42,10 @@ def test_repeat_guard_normalizes_arguments_and_resets_after_success():
 def test_repeated_failure_stops_before_fourth_execution(tmp_path):
     model = ScriptedModel([response(ModelToolCall(f"read-{i}", "read_file", '{"path":"missing"}')) for i in range(4)])
     _, agent = build_runtime(tmp_path, model)
-    with pytest.raises(AgentLoopStopped) as stopped:
-        agent.run("task", **inputs(tmp_path))
-    assert stopped.value.reason == "repeated_tool_failure"
-    assert len(stopped.value.run_result.tool_results) == 3
+    result = agent.run("task", **inputs(tmp_path))
+    assert result.stop_reason == "repeated_tool_failure"
+    assert len(result.tool_results) == 3
+    assert result.finalization_status == "failed"
 
 
 def test_large_tool_batch_cannot_bypass_actual_call_budget(tmp_path):
@@ -53,11 +53,10 @@ def test_large_tool_batch_cannot_bypass_actual_call_budget(tmp_path):
     workspace, agent = build_runtime(tmp_path, model)
     workspace.resolve("input.txt").write_text("input", encoding="utf-8")
     agent.max_tool_calls = 2
-    with pytest.raises(AgentLoopStopped) as stopped:
-        agent.run("task", **inputs(tmp_path))
-    assert stopped.value.reason == "tool_budget_exhausted"
-    assert len(stopped.value.run_result.tool_results) == 2
-    assert len(model.requests) == 1
+    result = agent.run("task", **inputs(tmp_path))
+    assert result.stop_reason == "tool_budget_exhausted"
+    assert len(result.tool_results) == 2
+    assert len(model.requests) == 2  # 最后一次是仅总结，不执行剩余批次。
 
 
 def test_resume_preserves_consumed_budget_and_does_not_reexecute_approved_write(tmp_path):
@@ -70,11 +69,10 @@ def test_resume_preserves_consumed_budget_and_does_not_reexecute_approved_write(
     assert checkpoint.react_snapshot.loop_guard["calls_used"] == 1
     _, second = build_runtime(tmp_path, ScriptedModel([response(ModelToolCall("read-after", "read_file", '{"path":"input.txt"}'))]))
     request = pause.approval_request
-    with pytest.raises(AgentLoopStopped) as stopped:
-        second.resume(pause.checkpoint_id, expected_revision=pause.revision,
-                      approval_decision=ApprovalDecision(request_id=request.request_id, approved=True, scope=request.scope, fingerprint=request.fingerprint))
-    assert stopped.value.reason == "tool_budget_exhausted"
-    assert len(stopped.value.run_result.tool_results) == 2
+    result = second.resume(pause.checkpoint_id, expected_revision=pause.revision,
+        approval_decision=ApprovalDecision(request_id=request.request_id, approved=True, scope=request.scope, fingerprint=request.fingerprint))
+    assert result.stop_reason == "tool_budget_exhausted"
+    assert len(result.tool_results) == 2
     assert workspace.resolve("output.txt").read_text() == "done"
 
 
@@ -82,10 +80,9 @@ def test_task_remaining_budget_is_enforced_before_more_calls(tmp_path):
     _, agent = build_runtime(tmp_path, ScriptedModel([response(ModelToolCall("read", "read_file", '{"path":"missing"}'))]))
     args = inputs(tmp_path)
     args["workflow_snapshot"].state.update({"code_tool_call_count": 60, "max_code_tool_calls": 60})
-    with pytest.raises(AgentLoopStopped) as stopped:
-        agent.run("task", **args)
-    assert stopped.value.reason == "tool_budget_exhausted"
-    assert not stopped.value.run_result.tool_results
+    result = agent.run("task", **args)
+    assert result.stop_reason == "tool_budget_exhausted"
+    assert not result.tool_results
 
 
 def test_nonzero_command_exit_counts_as_failure_even_when_tool_ok():
@@ -105,11 +102,10 @@ def test_repeat_failures_survive_approval_pause_and_new_runtime(tmp_path):
     assert isinstance(pause, AgentRunPause)
     _, second = build_runtime(tmp_path, ScriptedModel([response(ModelToolCall("repeat", "read_file", '{ "path": "missing.txt" }'))]))
     request = pause.approval_request
-    with pytest.raises(AgentLoopStopped) as stopped:
-        second.resume(pause.checkpoint_id, expected_revision=pause.revision,
-                      approval_decision=ApprovalDecision(request_id=request.request_id, approved=True, scope=request.scope, fingerprint=request.fingerprint))
-    assert stopped.value.reason == "repeated_tool_failure"
-    assert len(stopped.value.run_result.tool_results) == 4
+    result = second.resume(pause.checkpoint_id, expected_revision=pause.revision,
+        approval_decision=ApprovalDecision(request_id=request.request_id, approved=True, scope=request.scope, fingerprint=request.fingerprint))
+    assert result.stop_reason == "repeated_tool_failure"
+    assert len(result.tool_results) == 4
 
 
 def test_stricter_resume_budget_blocks_pending_handler_before_approval_execution(tmp_path):

@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 from typing import Any, cast
+from typing import Literal
 import json
 
 from pydantic import BaseModel, Field
@@ -9,7 +10,7 @@ from pydantic import BaseModel, Field
 from tikiagent.context.memory.local import LocalMemoryManager
 from tikiagent.context.memory.models import LocalMemory
 from tikiagent.context.models import BaseContext, WorkingMemory
-from tikiagent.context.preparation import ContextRuntime
+from tikiagent.context.preparation import ContextRuntime, ContextBudgetExceeded
 from tikiagent.harness.execution import ExecutionHarness
 from tikiagent.harness.exposure import ToolExposureGuard
 from tikiagent.harness.scope import ExecutionContext
@@ -23,6 +24,9 @@ from tikiagent.providers.llm.models import ModelClient, StructuredModelClient
 from tikiagent.tools.dispatcher import Dispatcher
 from tikiagent.tools.models import ToolError, ToolResult
 from tikiagent.tools.registry import ToolRegistry
+from tikiagent.runtime.lifecycle import structured_once, final_context
+from tikiagent.harness.persistence.finalization import FinalizationLedger
+from tikiagent.providers.llm.openai_compatible import ModelOutputError
 
 
 class ResearchDraftSource(BaseModel):
@@ -36,6 +40,7 @@ class ResearchDraft(BaseModel):
     findings: list[str] = Field(default_factory=list)
     sources: list[ResearchDraftSource] = Field(default_factory=list)
     unresolved_questions: list[str] = Field(default_factory=list)
+    delivery_status: Literal["ready", "partial", "none"] = "ready"
 
 
 class ResearchAgent:
@@ -52,6 +57,7 @@ class ResearchAgent:
         max_extracts: int = 2,
         context_runtime: ContextRuntime | None = None,
         execution_harness: ExecutionHarness | None = None,
+        finalizations=None,
     ) -> None:
         for name, value in {
             "max_steps": max_steps,
@@ -67,6 +73,7 @@ class ResearchAgent:
         self.context_runtime = context_runtime or ContextRuntime()
         self.execution_harness = execution_harness
         self.supports_harness = execution_harness is not None
+        self.finalizations = finalizations or FinalizationLedger()
         self.tool_limits = {
             "web_search": max_searches,
             "web_extract": max_extracts,
@@ -100,21 +107,32 @@ class ResearchAgent:
         tool_results: list[ToolResult] = []
         tool_counts = {name: 0 for name in self.tool_limits}
         draft_text = ""
+        stop_reason = "max_steps"
+        available = set(self.dispatcher.registry.names()) & set(self.tool_limits)
 
         for _step in range(1, self.max_steps + 1):
-            prepared = self.context_runtime.prepare(
-                base_context=context,
-                local_memory=local.memory,
-                registry=self.dispatcher.registry,
-            )
+            if available and all(tool_counts[name] >= self.tool_limits[name] for name in available):
+                stop_reason = "tool_budget_exhausted"
+                break
+            try:
+                prepared = self.context_runtime.prepare(
+                    base_context=context,
+                    local_memory=local.memory,
+                    registry=self.dispatcher.registry,
+                )
+            except ContextBudgetExceeded:
+                stop_reason = "context_budget_exhausted"
+                break
             context = prepared.base_context
             local.replace(prepared.local_memory)
-            response = self.model.complete(
-                messages=prepared.messages,
-                tool_schemas=prepared.tool_view.schemas,
-            )
+            try:
+                response = self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
+            except ModelOutputError:
+                stop_reason = "model_response"
+                break
             if not response.tool_calls:
                 draft_text = response.final_text or ""
+                stop_reason = None
                 break
 
             tool_messages: list[dict[str, Any]] = []
@@ -159,19 +177,11 @@ class ResearchAgent:
             )
 
         observations, source_map = self._collect_search_evidence(tool_results)
-        if not source_map:
-            return ResearchResult(
-                handoff_id=handoff.handoff_id,
-                summary="ResearchAgent 未取得有效 Web Search 证据",
-                findings=[],
-                sources=[],
-                observations=observations,
-                queries=[item.query for item in observations],
-                unresolved_questions=["未取得可验证来源"],
-            )
-
         evidence = json.dumps(
-            [item.model_dump(mode="json") for item in observations],
+            {"observations": [item.model_dump(mode="json") for item in observations],
+             "contents": [{"tool_call_id": item.tool_call_id, "tool_name": item.tool_name, "ok": item.ok,
+                           "excerpt": json.dumps(item.output, ensure_ascii=False)[:2500]} for item in tool_results],
+             "stop_reason": stop_reason},
             ensure_ascii=False,
         )
         synthesis_context = context.model_copy(
@@ -180,34 +190,39 @@ class ResearchAgent:
                     update={
                         "phase": "research_synthesis",
                         "instruction": (
-                            f"Agent 草稿：{draft_text}\n搜索证据：{evidence}"
+                            f"原始委派约束：{handoff.instruction}\nAgent 草稿：{draft_text}\n搜索证据：{evidence}"
                         ),
                     }
                 )
             }
         )
-        synthesis_call = self.context_runtime.prepare(
-            base_context=synthesis_context,
-            local_memory=LocalMemory(),
-            registry=ToolRegistry(),
-            response_type=ResearchDraft,
-        )
-        draft = cast(
-            ResearchDraft,
-            self.structured_model.complete_structured(
-                messages=synthesis_call.messages,
-                response_type=ResearchDraft,
-            ),
-        )
+        identity = f"{context.working_memory.session_id}/{context.working_memory.task_id}/research/{handoff.handoff_id}"
+        draft = ResearchDraft(summary="调研未完成总结，请查看已取得来源", delivery_status="partial" if source_map else "none",
+                              unresolved_questions=["未完成结构化总结"])
+        status = "already_consumed"
+        if self.finalizations.claim(identity, stop_reason or "synthesis"):
+            status = "failed"
+            try:
+                synthesis_call = final_context(self.context_runtime, base_context=synthesis_context,
+                    local_memory=LocalMemory(), registry=ToolRegistry(), response_type=ResearchDraft)
+                draft = cast(ResearchDraft, structured_once(self.structured_model,
+                    messages=synthesis_call.messages, response_type=ResearchDraft))
+                status = "completed"
+            except Exception:
+                pass
+            self.finalizations.finish(identity, status)
         sources = self._allowlisted_sources(draft.sources, source_map)
         return ResearchResult(
             handoff_id=handoff.handoff_id,
             summary=draft.summary,
-            findings=draft.findings,
+            findings=draft.findings if source_map else [],
             sources=sources,
             observations=observations,
             queries=[item.query for item in observations],
-            unresolved_questions=draft.unresolved_questions,
+            unresolved_questions=draft.unresolved_questions if source_map else [*draft.unresolved_questions, "未取得可验证来源"],
+            stop_reason=stop_reason,
+            delivery_status=draft.delivery_status if source_map else "none",
+            finalization_status=status,
         )
 
     @staticmethod

@@ -28,6 +28,7 @@ class ToolLoopGuard:
         self.repeat_limit = min(repeat_limit, data.get("repeat_limit", repeat_limit))
         self.calls_used = max(data.get("calls_used", legacy_calls), legacy_calls)
         self.failures: dict[str, int] = dict(data.get("failures", {}))
+        self.read_observations: dict[str, dict] = dict(data.get("read_observations", {}))
 
     @staticmethod
     def fingerprint(name: str, arguments_json: str) -> str:
@@ -50,6 +51,8 @@ class ToolLoopGuard:
                 "repeated_tool_failure",
                 f"工具 {name} 的相同参数已失败 {self.repeat_limit} 次，停止无进展重试",
             )
+        if self.read_observations.get(key, {}).get("repeats", 0) >= self.repeat_limit:
+            raise AgentLoopStopped("no_progress", "相同只读请求连续取得相同内容；停止重复取证并总结")
 
     def record(self, name: str, arguments_json: str, result: ToolResult) -> None:
         self.calls_used += 1
@@ -61,6 +64,14 @@ class ToolLoopGuard:
             self.failures[key] = self.failures.get(key, 0) + 1
         else:
             self.failures.pop(key, None)
+        if name in {"read_file", "list_files", "grep"} and not failed:
+            digest = hashlib.sha256(json.dumps(result.output, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+            prior = self.read_observations.get(key, {})
+            self.read_observations[key] = {"digest": digest,
+                "repeats": prior.get("repeats", 0) + 1 if prior.get("digest") == digest else 1}
+        elif name not in {"read_file", "list_files", "grep"}:
+            # 写入、命令或未知工具可能改变环境；不阻止后续重新检查。
+            self.read_observations.clear()
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -68,4 +79,5 @@ class ToolLoopGuard:
             "repeat_limit": self.repeat_limit,
             "calls_used": self.calls_used,
             "failures": dict(self.failures),
+            "read_observations": dict(self.read_observations),
         }

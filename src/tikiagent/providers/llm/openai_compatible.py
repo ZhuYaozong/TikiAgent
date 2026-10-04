@@ -18,6 +18,10 @@ from tikiagent.providers.llm.structured_output import (
 class ModelOutputError(RuntimeError):
     """模型输出无法安全执行；不携带可能含敏感数据的响应正文。"""
 
+    def __init__(self, message, diagnostics=None):
+        super().__init__(message)
+        self.diagnostics = diagnostics or {}
+
 
 class OpenAICompatibleClient:
     """可通过配置连接 DeepSeek、vLLM 等兼容后端。"""
@@ -55,15 +59,19 @@ class OpenAICompatibleClient:
         self,
         messages: Sequence[Mapping[str, Any]],
         tool_schemas: Sequence[Mapping[str, Any]],
+        *, _single: bool = False,
     ) -> ModelResponse:
         self._check_budget(messages, self._convert_tools(tool_schemas))
         request_messages = list(messages)
+        client = self.client.with_options(max_retries=0) if _single and hasattr(self.client, "with_options") else self.client
+        attempts = 1 if _single else 2
+        diagnostics = []
         # 空响应、截断或坏参数合计最多重试一次，绝不交给工具执行半截参数。
-        for attempt in range(2):
+        for attempt in range(attempts):
             self._check_budget(request_messages, self._convert_tools(tool_schemas))
-            response = self.client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=self.settings.model, messages=request_messages,
-                tools=self._convert_tools(tool_schemas), tool_choice="auto",
+                **({"tools": self._convert_tools(tool_schemas), "tool_choice": "auto"} if tool_schemas else {}),
                 max_tokens=self.settings.max_output_tokens,
             )
             if not getattr(response, "choices", None):
@@ -75,9 +83,11 @@ class OpenAICompatibleClient:
                     invalid = invalid or not isinstance(json.loads(call.function.arguments), dict)
                 except (ValueError, TypeError):
                     invalid = True
+            diagnostics.append({"attempt": attempt + 1, "finish_reason": getattr(response.choices[0], "finish_reason", None),
+                                "invalid_output": invalid, "has_text": bool(message.content), "tool_call_count": len(message.tool_calls or [])})
             if invalid:
-                if attempt:
-                    raise ModelOutputError("模型连续返回截断或无效工具参数；未执行本批工具")
+                if attempt == attempts - 1:
+                    raise ModelOutputError("模型返回截断或无效工具参数；未执行本批工具", {"attempts": diagnostics})
                 request_messages = [*messages, {"role": "user", "content":
                     "上一响应截断或工具参数不完整，未执行任何工具。请简短输出，工具参数必须是完整 JSON 对象；证据使用引用，勿复制长正文。"}]
                 continue
@@ -100,20 +110,29 @@ class OpenAICompatibleClient:
                          "response_retries": attempt, "empty_response_retries": attempt if request_messages == list(messages) else 0},
         )
 
+    def complete_once(self, messages, tool_schemas):
+        """收尾的单次请求；禁止 SDK 和输出重新生成重试。"""
+        return self.complete(messages, tool_schemas, _single=True)
+
+    def complete_structured_once(self, messages, response_type):
+        return self.complete_structured(messages, response_type, _single=True)
+
     def complete_structured(
         self,
         messages: Sequence[Mapping[str, Any]],
         response_type: type[StructuredModel],
+        *, _single: bool = False,
     ) -> StructuredModel:
         """使用 Schema 提示和本地校验获得结构化结果。"""
 
         request_messages = structured_messages(messages, response_type.model_json_schema())
         last_error: StructuredOutputError | None = None
+        client = self.client.with_options(max_retries=0) if _single and hasattr(self.client, "with_options") else self.client
 
         # 第一次失败时把校验错误作为 Observation，让模型修正一次。
-        for attempt in range(2):
+        for attempt in range(1 if _single else 2):
             self._check_budget(request_messages, [])
-            response = self.client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=self.settings.model,
                 messages=request_messages,
                 max_tokens=self.settings.max_output_tokens,
@@ -148,7 +167,7 @@ class OpenAICompatibleClient:
                 )
 
         raise StructuredOutputError(
-            f"模型连续两次未返回合法结构化结果：{last_error}"
+            f"模型在 {'1' if _single else '2'} 次请求内未返回合法结构化结果：{last_error}"
         )
 
     def _check_budget(self, messages, tools) -> None:

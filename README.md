@@ -287,6 +287,14 @@ uv run --locked python -m compileall -q src tests
 
 TUI 中输入 `/paths` 可在本地查看当前 Session 的 Workspace、History/Handoff、Trace 和 Checkpoint 位置。此命令只更新显示，不提交给模型，也不写入任务 History。
 
+### 有界执行与最终收尾
+
+正式 Code、Research、Supervisor、Verifier 在工作预算耗尽后保留一次只收尾请求，不再开放工作工具。Code 提交已有成果，Research 根据已获得的来源摘录综合结果，Verifier 仅提交验收报告，Supervisor 仅完成或停止。最终请求关闭输出重生成和 SDK 重试，使用规则压缩避免额外摘要调用；失败后以明确的部分成果或未完成状态返回。
+
+执行停止原因、交付状态和验证结论分别记录：`ready` 只是待验收声明，不代表 PASS；`not_performed` 表示尚未完成验收，不应解释成产物错误。FINISH 仍要求最新 Result/Handoff 对应的通过验证。失败处理按当前 Todo 和失败作用域决定，不能因为另一项 Code 任务停止就封锁所有 Code 任务。
+
+相同只读参数反复取得相同内容会触发无进展保护；写入或命令等可能改变环境的动作会重置该观察。该机制不是文件缓存，也不能感知系统外部修改。收尾消费凭据保存在 `checkpoints/finalizations/`，先记录消费再请求模型；同一执行身份不会自动重发未知结果的收尾请求。这些凭据不是完整 Workflow 节点快照，不新增自动节点级续跑能力，审批恢复仍读取原有权威 Checkpoint。
+
 真实 API Demo 会产生费用和外部请求，不属于默认测试套件。
 
 ## Documentation

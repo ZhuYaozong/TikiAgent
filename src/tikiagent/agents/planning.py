@@ -21,6 +21,10 @@ from tikiagent.tools.models import ToolError, ToolExecutionError, ToolResult
 from tikiagent.tools.registry import RegisteredTool, ToolRegistry
 from tikiagent.agents.capabilities import capability_prompt, supports
 from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, DeliveryMode
+from tikiagent.runtime.lifecycle import complete_once, final_context
+from tikiagent.harness.persistence.finalization import FinalizationLedger
+from tikiagent.providers.llm.openai_compatible import ModelOutputError
+from tikiagent.context.preparation import ContextBudgetExceeded
 
 
 class Arguments(BaseModel):
@@ -68,7 +72,7 @@ class PlanningSupervisorAgent:
 
     supports_tool_loop = True
 
-    def __init__(self, model, *, context_runtime=None, max_steps=32, max_tool_calls=64, observer=None):
+    def __init__(self, model, *, context_runtime=None, max_steps=32, max_tool_calls=64, observer=None, finalizations=None):
         if min(max_steps, max_tool_calls) < 1:
             raise ValueError("Supervisor 预算必须为正数")
         self.model = model
@@ -76,10 +80,14 @@ class PlanningSupervisorAgent:
         self.max_steps = max_steps
         self.max_tool_calls = max_tool_calls
         self.observer = observer
+        self.finalizations = finalizations or FinalizationLedger()
 
     def advance(self, state, *, history_store, context_builder, finish_guard, available_agents):
         working = dict(state)
         runtime = deepcopy(state.get("supervisor_runtime", {}))
+        # 跨委派/审批恢复保留最严格上限，改变启动配置不能补充已消费预算。
+        runtime["max_steps"] = min(self.max_steps, runtime.get("max_steps", self.max_steps))
+        runtime["max_tool_calls"] = min(self.max_tool_calls, runtime.get("max_tool_calls", self.max_tool_calls))
         # 恢复时复用已经生成的 History 摘要，缓存仅属于当前 Workflow。
         engine = getattr(self.context_runtime.base_compressor, "engine", None)
         if engine is not None:
@@ -176,14 +184,17 @@ class PlanningSupervisorAgent:
                 fail("capability_mismatch", "当前 Todo 的能力不匹配")
             prior = working.get("verifications_by_id", {}).get(todo.verification_id, {})
             if prior.get("retryable") is False:
-                fail("execution_blocked", "最新验证报告为不可重试：" + str(prior.get("blocking_reason") or prior.get("failure_category")))
+                previous = history_store.get_by_id(todo.handoff_id) if todo.handoff_id else None
+                changed = previous is not None and previous.payload.get("instruction") != instruction
+                if ("replan" not in prior.get("allowed_actions", []) or prior.get("failure_scope") != "run"
+                        or not changed or todo.attempts >= 2):
+                    fail("execution_blocked", "最新报告禁止原样重跑，或重规划尝试已耗尽：" + str(prior.get("blocking_reason") or prior.get("failure_category")))
             if any(working["task_board"].items[d].status != "completed" for d in todo.depends_on):
                 fail("dependency_incomplete", "依赖 Todo 尚未完成")
             if state["delegation_count"] >= state["max_delegations"]:
                 fail("delegation_budget_exhausted", "委派预算已耗尽，请停止")
             if todo.owner == "code_agent" and (
                 state.get("code_tool_call_count", 0) >= state.get("max_code_tool_calls", 60)
-                or state["specialist_results"].get("code_agent", {}).get("stop_reason")
             ):
                 fail("execution_blocked", "CodeAgent 已触发执行保护，请停止或调整其他未完成任务")
             for ref in context_refs:
@@ -223,7 +234,8 @@ class PlanningSupervisorAgent:
             registry.register(RegisteredTool(name, description, args, handler))
         harness = ExecutionHarness(Dispatcher(registry), permission_policy=RuleBasedPermissionPolicy(allowed_tools=registry.names()))
 
-        while runtime.get("steps", 0) < self.max_steps and runtime.get("tool_calls", 0) < self.max_tool_calls:
+        while (runtime.get("steps", 0) < runtime["max_steps"] and runtime.get("tool_calls", 0) < runtime["max_tool_calls"]
+               and not runtime.get("force_finalization")):
             runtime["steps"] = runtime.get("steps", 0) + 1
             refs = list(dict.fromkeys([*[
                 ref for todo in reversed(list(working["task_board"].items.values()))
@@ -234,9 +246,15 @@ class PlanningSupervisorAgent:
                                        phase="orchestration", instruction="观察最新事实，自主规划、委派、完成或停止。\n" + capability_prompt(available_agents), context_refs=refs),
                 task=state["task"], acceptance_criteria=working["acceptance_criteria"], task_board=working["task_board"],
             )
-            prepared = self.context_runtime.prepare(base_context=context, local_memory=local.memory, registry=registry)
-            local.replace(prepared.local_memory)
-            response = self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
+            try:
+                prepared = self.context_runtime.prepare(base_context=context, local_memory=local.memory, registry=registry)
+                local.replace(prepared.local_memory)
+                response = self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
+            except (ModelOutputError, ContextBudgetExceeded) as error:
+                runtime["force_finalization"] = f"规划中断：{type(error).__name__}"
+                self._emit("model_response", working, data={"agent": "supervisor", "error_type": type(error).__name__,
+                                                            **getattr(error, "diagnostics", {})})
+                break
             self._emit("model_response", working, data={"agent": "supervisor", **response.diagnostics})
             calls = response.tool_calls
             if not calls:
@@ -253,7 +271,7 @@ class PlanningSupervisorAgent:
                 try:
                     if invalid_batch:
                         fail("control_call_must_be_single", "委派和结束操作必须独立调用，本批次未执行")
-                    if runtime["tool_calls"] > self.max_tool_calls:
+                    if runtime["tool_calls"] > runtime["max_tool_calls"]:
                         fail("supervisor_tool_budget", "Supervisor 工具预算已耗尽")
                     arguments = json.loads(call.arguments_json)
                     result = harness.handle(
@@ -280,7 +298,9 @@ class PlanningSupervisorAgent:
                     failures = runtime.setdefault("failures", {})
                     failures[key] = failures.get(key, 0) + 1
                     if failures[key] >= 3:
-                        chosen = SupervisorDecision(action="stop", target_agent=None, instruction="", reason=f"编排连续同类失败：{call.name}/{result.error.code}；{result.error.message}")
+                        runtime["force_finalization"] = f"编排连续同类失败：{call.name}/{result.error.code}；{result.error.message}"
+                    if result.error.code == "delegation_budget_exhausted":
+                        runtime["force_finalization"] = "委派预算已耗尽"
                 else:
                     runtime["failures"] = {}
             if not runtime.get("pending"):
@@ -288,7 +308,31 @@ class PlanningSupervisorAgent:
             if chosen is not None:
                 break
         if chosen is None:
-            chosen = SupervisorDecision(action="stop", target_agent=None, instruction="", reason="Supervisor 达到规划步数或工具调用预算")
+            identity = f"{state['session_id']}/{state['task_id']}/supervisor"
+            reason = runtime.get("force_finalization") or "Supervisor 达到规划步数或工具调用预算"
+            runtime["finalization_consumed"] = True
+            if self.finalizations.claim(identity, reason):
+                outcome = "failed"
+                try:
+                    request = ContextRequest(agent="supervisor", task_id=state["task_id"], session_id=state["session_id"],
+                        phase="orchestration", instruction="执行预算已耗尽；仅允许单独调用 finish_task 或 stop_task 总结已有事实，不得委派或修改计划。", context_refs=refs if 'refs' in locals() else [])
+                    context = context_builder.build(request=request, task=state["task"],
+                        acceptance_criteria=working["acceptance_criteria"], task_board=working["task_board"])
+                    final_registry = ToolRegistry()
+                    for name in ("finish_task", "stop_task"):
+                        final_registry.register(registry.get(name))
+                    prepared = final_context(self.context_runtime, base_context=context, local_memory=local.memory, registry=final_registry)
+                    response = complete_once(self.model, messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
+                    if len(response.tool_calls) == 1 and response.tool_calls[0].name in {"finish_task", "stop_task"}:
+                        call = response.tool_calls[0]
+                        args = EndArgs.model_validate(json.loads(call.arguments_json))
+                        (finish_task if call.name == "finish_task" else stop_task)(args.reason)
+                        outcome = "completed"
+                except Exception:
+                    pass  # 程序回退仍需准确保留停止，不重发收尾请求。
+                self.finalizations.finish(identity, outcome)
+            if chosen is None:
+                chosen = SupervisorDecision(action="stop", target_agent=None, instruction="", reason=reason)
         runtime["local_memory"] = local.memory.model_dump(mode="json")
         if engine is not None:
             runtime["history_summary_cache"] = dict(engine.cache)

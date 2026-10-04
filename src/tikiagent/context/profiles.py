@@ -16,6 +16,7 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
         phase_rules={
             "orchestration": [
                 "先用 update_plan 创建具体 Todo 与依赖；始终保留原始任务和验收要求",
+                "只规划用户要求的深度，不擅自增加全量审计、报告或环境探针；工具未提供的字段不能写成必需验收条件",
                   "采用满足任务所需的最小计划；每次委派后已有独立 Verifier，不为重复验收再创建 Todo，除非用户确实要求额外审计",
                 "每个 Todo 声明 required_capabilities 和带 criterion_id 的 acceptance_criteria；不得削弱已冻结验收条件",
                 "ResearchAgent 只有 Tavily 联网能力；本地包版本、解释器与依赖安装交给 CodeAgent 的 environment Todo",
@@ -52,6 +53,7 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
             "research": [
                 "先搜索再按需读取原文",
                 "保留真实 URL 和未解决问题",
+                "已有证据足以回答时立即停止搜索；预算不足时保留部分成果，不反复请求已耗尽工具",
             ],
             "research_synthesis": [
                 "只使用已取得的工具证据整理结构化结果",
@@ -82,6 +84,7 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
         system_rules=[
             "只使用 ContextBuilder 提供的 Base Context",
             "内部 ReAct messages 只在本次执行期间存在",
+            "每次调用前判断是否能补充新证据；已观察且未改变的信息优先复用，足够满足当前要求就提交，不必穷尽全部可读文件",
             "文件和命令操作只能通过 Execution Harness",
         ],
         phase_rules={
@@ -98,6 +101,7 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
                 "最终答案引用实际读取的文件或会话元数据；缺失证据应明确说明",
             ],
             "execute": ["按当前指令完成最小交付并获取证据"],
+            "finalization": ["工作预算已结束；仅提交已有交付，不调用工作工具，不把总结成功当成验收通过"],
         },
         tool_names_by_phase={
             "coding": {
@@ -126,6 +130,7 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
             },
             "inspection": {"read_file", "list_files", "grep", "inspect_python_environment"},
             "environment": {"inspect_python_environment", "probe_python_import", "run_command"},
+            "finalization": {"submit_result"},
         },
         allowed_record_types={
             "handoff",

@@ -22,4 +22,18 @@ class SessionContextReferenceProvider:
             and record.producer == "supervisor"
             and record.record_id.startswith("final:")
         ]
-        return [record.record_id for record in records[-self.limit :]]
+        # 仅扩展已授权最终结果的显式来源链；同 Session、有限深度/数量，禁止全库放开。
+        selected = records[-self.limit :] if self.limit > 0 else []
+        refs = [record.record_id for record in selected]
+        for _ in range(2):
+            previous = list(refs)
+            for ref in previous:
+                record = history.get_by_id(ref)
+                if record is None:
+                    continue
+                for linked in record.refs:
+                    source = history.get_by_id(linked)
+                    if (source is not None and source.session_id == session_id and linked not in refs
+                            and source.record_type in {"handoff", "result", "verification"} and len(refs) < 24):
+                        refs.append(linked)
+        return refs

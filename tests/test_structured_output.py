@@ -89,7 +89,7 @@ def test_client_retries_once_after_validation_failure() -> None:
 def test_client_raises_after_two_invalid_outputs() -> None:
     client = build_client(FakeCompletions(["bad", "still bad"]))
 
-    with pytest.raises(StructuredOutputError, match="连续两次"):
+    with pytest.raises(StructuredOutputError, match="2 次请求"):
         client.complete_structured(
             messages=[{"role": "user", "content": "返回数字"}],
             response_type=Answer,
