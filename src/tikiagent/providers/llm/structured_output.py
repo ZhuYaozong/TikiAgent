@@ -11,6 +11,10 @@ StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 class StructuredOutputError(ValueError):
     """模型文本无法转换为目标 Pydantic 模型。"""
 
+    def __init__(self, message, diagnostics=None):
+        super().__init__(message)
+        self.diagnostics = diagnostics or {}
+
 
 def extract_json_object(content: str) -> str:
     """从纯 JSON 或 Markdown 代码块中提取最外层对象。"""

@@ -25,6 +25,8 @@ from tikiagent.runtime.lifecycle import complete_once, final_context
 from tikiagent.harness.persistence.finalization import FinalizationLedger
 from tikiagent.providers.llm.openai_compatible import ModelOutputError
 from tikiagent.context.preparation import ContextBudgetExceeded
+from tikiagent.runtime.diagnostics import finalization_error
+from tikiagent.harness.persistence.budget import RequestBudgetExceeded
 
 
 class Arguments(BaseModel):
@@ -58,6 +60,9 @@ class DelegateArgs(Arguments):
     instruction: str = Field(min_length=1, max_length=4000)
     context_refs: list[str] = Field(default_factory=list, max_length=20)
     reason: str = Field(min_length=1, max_length=1000)
+    missing_evidence: str = Field(default="", max_length=500)
+    strategy_change: str = Field(default="", max_length=500)
+    expected_evidence: str = Field(default="", max_length=500)
 
 
 class EndArgs(Arguments):
@@ -175,7 +180,7 @@ class PlanningSupervisorAgent:
             runtime["plan_revision"] = runtime.get("plan_revision", 0) + 1
             return {"plan_revision": runtime["plan_revision"], "task_board": working["task_board"].model_dump(mode="json")}
 
-        def delegate_task(todo_id, instruction, context_refs, reason):
+        def delegate_task(todo_id, instruction, context_refs, reason, missing_evidence="", strategy_change="", expected_evidence=""):
             nonlocal chosen
             todo = working["task_board"].items.get(todo_id)
             if todo is None or todo.status not in {"pending", "failed"}:
@@ -183,6 +188,13 @@ class PlanningSupervisorAgent:
             if not supports(todo.owner, todo.required_capabilities):
                 fail("capability_mismatch", "当前 Todo 的能力不匹配")
             prior = working.get("verifications_by_id", {}).get(todo.verification_id, {})
+            if todo.attempts:
+                if todo.attempts >= 2 or not all(text.strip() for text in (missing_evidence, strategy_change, expected_evidence)):
+                    fail("replan_requires_evidence", "重规划必须明确缺失证据、策略变化和期望新增证据；同一Todo最多执行2次")
+                retry_key = hashlib.sha256(json.dumps([todo_id, missing_evidence.strip(), strategy_change.strip(),
+                    expected_evidence.strip()], ensure_ascii=False).encode()).hexdigest()
+                if retry_key in runtime.get("replan_keys", []):
+                    fail("replan_no_progress", "相同重规划内容已经尝试，不得重复委派")
             if prior.get("retryable") is False:
                 previous = history_store.get_by_id(todo.handoff_id) if todo.handoff_id else None
                 changed = previous is not None and previous.payload.get("instruction") != instruction
@@ -193,6 +205,8 @@ class PlanningSupervisorAgent:
                 fail("dependency_incomplete", "依赖 Todo 尚未完成")
             if state["delegation_count"] >= state["max_delegations"]:
                 fail("delegation_budget_exhausted", "委派预算已耗尽，请停止")
+            if todo.attempts:
+                runtime.setdefault("replan_keys", []).append(retry_key)
             if todo.owner == "code_agent" and (
                 state.get("code_tool_call_count", 0) >= state.get("max_code_tool_calls", 60)
             ):
@@ -250,7 +264,7 @@ class PlanningSupervisorAgent:
                 prepared = self.context_runtime.prepare(base_context=context, local_memory=local.memory, registry=registry)
                 local.replace(prepared.local_memory)
                 response = self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
-            except (ModelOutputError, ContextBudgetExceeded) as error:
+            except (ModelOutputError, ContextBudgetExceeded, RequestBudgetExceeded) as error:
                 runtime["force_finalization"] = f"规划中断：{type(error).__name__}"
                 self._emit("model_response", working, data={"agent": "supervisor", "error_type": type(error).__name__,
                                                             **getattr(error, "diagnostics", {})})
@@ -313,6 +327,7 @@ class PlanningSupervisorAgent:
             runtime["finalization_consumed"] = True
             if self.finalizations.claim(identity, reason):
                 outcome = "failed"
+                diagnosis = {}
                 try:
                     request = ContextRequest(agent="supervisor", task_id=state["task_id"], session_id=state["session_id"],
                         phase="orchestration", instruction="执行预算已耗尽；仅允许单独调用 finish_task 或 stop_task 总结已有事实，不得委派或修改计划。", context_refs=refs if 'refs' in locals() else [])
@@ -328,9 +343,13 @@ class PlanningSupervisorAgent:
                         args = EndArgs.model_validate(json.loads(call.arguments_json))
                         (finish_task if call.name == "finish_task" else stop_task)(args.reason)
                         outcome = "completed"
-                except Exception:
-                    pass  # 程序回退仍需准确保留停止，不重发收尾请求。
-                self.finalizations.finish(identity, outcome)
+                    else:
+                        raise ValueError("最终收尾必须单独请求finish_task或stop_task")
+                except Exception as error:
+                    diagnosis = finalization_error(error)
+                self.finalizations.finish(identity, outcome, diagnosis)
+                self._emit("model_response", working, data={"agent": "supervisor", "stage": "finalization",
+                    "finalization_status": outcome, **diagnosis})
             if chosen is None:
                 chosen = SupervisorDecision(action="stop", target_agent=None, instruction="", reason=reason)
         runtime["local_memory"] = local.memory.model_dump(mode="json")

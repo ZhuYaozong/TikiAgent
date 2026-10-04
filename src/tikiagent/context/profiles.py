@@ -23,6 +23,8 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
                 "安装依赖以环境事实为准，already satisfied 且版本满足即完成；不要重复升级或无依据重装，不创建无关报告",
                 "权限拒绝不能通过脚本包装绕过；不可重试报告应 stop_task 并说明阻塞原因",
                 "根据结果与失败原因决定调整、重试或停止，不重复委派不可恢复的失败",
+                "收尾截断或结构化结果失败不是缺少检索证据，禁止因此重新搜索；应停止并保留已有成果",
+                "再次委派必须填写missing_evidence、strategy_change、expected_evidence，不能只改写instruction；同一Todo最多执行两次",
                 "delegate_task、finish_task、stop_task 每次只能单独调用",
                 "完成必须请求 finish_task，阻塞必须请求 stop_task；不能用普通文本宣称完成",
             ],
@@ -58,6 +60,7 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
             "research_synthesis": [
                 "只使用已取得的工具证据整理结构化结果",
                 "来源 URL 不得超出搜索证据",
+                "仅输出短摘要、有限结论和source_id，不复制网页正文、URL或长snippet；总述不超过300字",
             ],
         },
         tool_names_by_phase={

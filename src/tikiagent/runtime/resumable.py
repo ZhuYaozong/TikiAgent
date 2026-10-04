@@ -31,6 +31,8 @@ from tikiagent.runtime.lifecycle import summarize_run
 from tikiagent.harness.persistence.finalization import FinalizationLedger
 from tikiagent.providers.llm.openai_compatible import ModelOutputError
 from tikiagent.context.preparation import ContextBudgetExceeded
+from tikiagent.runtime.diagnostics import finalization_error
+from tikiagent.harness.persistence.budget import RequestBudgetExceeded
 from tikiagent.tools.models import ToolError, ToolResult
 
 
@@ -39,7 +41,7 @@ class ResumableReActAgent(ReActAgent):
 
     def __init__(
         self, *args, execution_coordinator: ExecutionCoordinator,
-        max_tool_calls: int = 24, repeated_failure_limit: int = 3, **kwargs,
+        max_tool_calls: int = 24, repeated_failure_limit: int = 3, progress_revision=None, **kwargs,
     ) -> None:
         if max_tool_calls < 1 or repeated_failure_limit < 1:
             raise ValueError("工具预算和重复失败阈值必须大于 0")
@@ -47,6 +49,7 @@ class ResumableReActAgent(ReActAgent):
         self.execution_coordinator = execution_coordinator
         self.max_tool_calls = max_tool_calls
         self.repeated_failure_limit = repeated_failure_limit
+        self.progress_revision = progress_revision
         self.finalizations = FinalizationLedger(execution_coordinator.checkpoint_store.root / "finalizations")
 
     def _guard(self, workflow, snapshot=None, legacy_calls=0) -> ToolLoopGuard:
@@ -56,6 +59,7 @@ class ResumableReActAgent(ReActAgent):
             max_calls=min(self.max_tool_calls, remaining),
             repeat_limit=self.repeated_failure_limit,
             snapshot=snapshot, legacy_calls=legacy_calls,
+            revision_provider=self.progress_revision,
         )
 
     @staticmethod
@@ -213,6 +217,9 @@ class ResumableReActAgent(ReActAgent):
             phases.append(context.working_memory.phase)
             try:
                 response = self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
+            except RequestBudgetExceeded:
+                return self._finalize(context, local, tool_results, context_usages, phases, step,
+                                      "request_budget_exhausted", execution_context, run_id)
             except ModelOutputError:
                 return self._finalize(context, local, tool_results, context_usages, phases, step,
                                       "model_response", execution_context, run_id)
@@ -295,18 +302,25 @@ class ResumableReActAgent(ReActAgent):
         summary = f"执行停止：{reason}；已返回 {len(tool_results)} 项工具结果，交付尚未完成确认。"
         delivery = "partial" if tool_results else "none"
         status = "already_consumed"
+        diagnosis = {}
         if self.finalizations.claim(identity, reason):
             status = "failed"
             try:
                 result = summarize_run(self.model, self.context_runtime, context, local.memory, reason=reason)
                 summary, delivery, status = result.summary, result.delivery_status, "completed"
-            except Exception:
+            except Exception as error:
                 # 收尾错误只使用受控信息回退，不触发第二次生成或执行工具。
-                pass
-            self.finalizations.finish(identity, status)
+                diagnosis = finalization_error(error)
+            self.finalizations.finish(identity, status, diagnosis)
+        try:
+            self.execution_coordinator.trace_store.append(run_id=run_id or scope.task_id, event_type="agent_finalized",
+                details={"agent": "code_agent", "stage": "finalization", "status": status, **diagnosis})
+        except OSError:
+            pass
         return AgentRunResult(final_text=summary, steps=step, tool_results=tuple(tool_results),
                               messages=(), context_usages=tuple(usages), phases=tuple(phases),
-                              stop_reason=reason, delivery_status=delivery, finalization_status=status)
+                              stop_reason=reason, delivery_status=delivery, finalization_status=status,
+                              finalization_diagnostics=diagnosis)
 
     def _continue_from_checkpoint(self, checkpoint) -> AgentRunOutcome:
         snapshot = checkpoint.react_snapshot

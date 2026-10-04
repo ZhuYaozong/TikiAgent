@@ -15,6 +15,10 @@ from tikiagent.context.compression.models import ContextBudget
 from tikiagent.context.preparation import ContextRuntime
 from tikiagent.context.profiles import DEFAULT_CONTEXT_PROFILES
 from tikiagent.harness.persistence.finalization import FinalizationLedger
+from tikiagent.harness.persistence.budget import RequestBudget
+from tikiagent.runtime.policy import AgentPolicy, output_limit, stage_for
+from tikiagent.runtime.guard import workspace_revision
+from tikiagent.providers.llm.staged import StageModel
 from tikiagent.application.models import EventScope
 from tikiagent.application.chat import ModelChatService
 from tikiagent.application.context_refs import SessionContextReferenceProvider
@@ -100,6 +104,8 @@ class LazyResearchAgent:
         env_file: str | Path,
         context_runtime: ContextRuntime | None = None,
         finalizations=None,
+        policy=None,
+        request_budget=None,
     ) -> None:
         self.model = model
         self.env_file = env_file
@@ -107,6 +113,8 @@ class LazyResearchAgent:
         self.supports_harness = True
         self.context_runtime = context_runtime
         self.finalizations = finalizations
+        self.policy = policy or AgentPolicy()
+        self.request_budget = request_budget
 
     def run(
         self,
@@ -126,6 +134,10 @@ class LazyResearchAgent:
                 execution_harness=ExecutionHarness(dispatcher),
                 context_runtime=self.context_runtime,
                 finalizations=self.finalizations,
+                max_steps=self.policy.research_steps,
+                max_searches=self.policy.research_searches,
+                max_extracts=self.policy.research_extracts,
+                request_budget=self.request_budget,
             )
         return self.agent.run(
             handoff,
@@ -150,6 +162,10 @@ class ApplicationRuntimeFactory:
         self.event_bus = event_bus or EventBus()
         self.model = LazyOpenAICompatibleClient(env_file)
         self.checkpoints = JsonCheckpointStore(self.data_dir / "checkpoints")
+        load_dotenv(env_file)
+        self.policy = AgentPolicy.from_env()
+        self.request_budget = RequestBudget(self.data_dir / "budgets", model_limit=self.policy.model_requests,
+                                           web_limit=self.policy.task_web_tools)
 
     def build_controller(self) -> ApplicationController:
         sessions = SessionService(
@@ -160,20 +176,23 @@ class ApplicationRuntimeFactory:
             workflow_factory=self._build_workflow,
             checkpoint_store=self.checkpoints,
             event_bus=self.event_bus,
+            request_budget=self.request_budget,
         )
-        return ApplicationController(
+        controller = ApplicationController(
             sessions=sessions,
             router=StructuredIntentRouter(
-                self.model,
+                StageModel(self.model, "router", account=self.request_budget),
                 fallback=RuleBasedIntentRouter(),
             ),
-            chat=ModelChatService(self.model),
+            chat=ModelChatService(StageModel(self.model, "chat", account=self.request_budget)),
             workflow=adapter,
             context_refs=SessionContextReferenceProvider(
                 self.data_dir / "histories"
             ),
             event_bus=self.event_bus,
         )
+        controller.request_budget = self.request_budget
+        return controller
 
     def _build_workflow(self, session_id: str, workspace_id: str) -> MultiAgentWorkflow:
         # 预算配置不要求密钥；保持本地 status/测试和依赖装配的惰性初始化。
@@ -196,11 +215,13 @@ class ApplicationRuntimeFactory:
                 pass
 
         def context_observer(base, data):
+            if base.working_memory.task_id and base.working_memory.session_id:
+                self.request_budget.bind(base.working_memory.session_id, base.working_memory.task_id)
             observe("context_prepared", {"task_id": base.working_memory.task_id or None},
                     base.working_memory.task_id or session_id, data)
 
         def context_runtime(*, code=False):
-            engine = SummaryEngine(self.model, input_budget=max(256, context_limit - output_tokens - 1000))
+            engine = SummaryEngine(model("summary"), input_budget=max(256, context_limit - output_limit("summary") - 2000))
             profiles = None
             if code:
                 profile = DEFAULT_CONTEXT_PROFILES["code_agent"]
@@ -209,7 +230,16 @@ class ApplicationRuntimeFactory:
                 budget=ContextBudget(model_context_limit=context_limit, reserved_output_tokens=output_tokens),
                 profiles=profiles, base_compressor=LLMBaseCompressor(engine), local_compressor=LLMLocalCompressor(engine),
                 observer=context_observer,
+                budget_resolver=lambda agent, phase: ContextBudget(model_context_limit=context_limit - 2000,
+                    reserved_output_tokens=output_limit(stage_for(agent, phase))),
             )
+
+        def model(stage):
+            def diagnostics(data):
+                scope = self.request_budget.scope.get()
+                observe("model_response", {"task_id": scope[1] if scope else None},
+                        scope[1] if scope else session_id, data)
+            return StageModel(self.model, stage, account=self.request_budget, observer=diagnostics)
 
         # 物理目录按 Session 隔离；workspace_id 仍用于 Scope/Approval 身份绑定。
         workspace = Workspace(self.data_dir / "workspaces" / session_id)
@@ -226,10 +256,13 @@ class ApplicationRuntimeFactory:
         )
         code_agent = MultiAgentCodeAgent(
             ResumableReActAgent(
-                model=self.model,
+                model=model("code_agent"),
                 dispatcher=code_dispatcher,
                 system_prompt=CODE_SYSTEM_PROMPT,
-                max_steps=12,
+                max_steps=self.policy.code_steps,
+                max_tool_calls=self.policy.code_tools,
+                repeated_failure_limit=self.policy.repeat_limit,
+                progress_revision=lambda: workspace_revision(workspace.root),
                 execution_coordinator=coordinator,
                 context_runtime=context_runtime(code=True),
             )
@@ -239,19 +272,25 @@ class ApplicationRuntimeFactory:
         verifier_registry = build_read_only_file_registry(workspace)
         register_python_environment_tools(verifier_registry, workspace, tests=True)
         finalizations = FinalizationLedger(self.checkpoints.root / "finalizations")
-        verifier = VerifierAgent(self.model, verifier_registry, context_runtime=context_runtime(), observer=observe, finalizations=finalizations)
+        verifier = VerifierAgent(model("verifier"), verifier_registry, context_runtime=context_runtime(), observer=observe,
+            finalizations=finalizations, max_steps=self.policy.verifier_steps, max_tool_calls=self.policy.verifier_tools,
+            deduplicate=True, progress_revision=lambda: workspace_revision(workspace.root))
         gate = VerificationGate(
             research_verifier=verifier,
             code_verifier=verifier,
         )
-        return MultiAgentWorkflow(
-            supervisor=PlanningSupervisorAgent(self.model, context_runtime=context_runtime(), observer=observe, finalizations=finalizations),
-            research_agent=LazyResearchAgent(self.model, self.env_file, context_runtime=context_runtime(), finalizations=finalizations),
+        workflow = MultiAgentWorkflow(
+            supervisor=PlanningSupervisorAgent(model("supervisor"), context_runtime=context_runtime(), observer=observe, finalizations=finalizations,
+                max_steps=self.policy.supervisor_steps, max_tool_calls=self.policy.supervisor_tools),
+            research_agent=LazyResearchAgent(model("research_agent"), self.env_file, context_runtime=context_runtime(), finalizations=finalizations,
+                policy=self.policy, request_budget=self.request_budget),
             code_agent=code_agent,
             verification_gate=gate,
             workspace_id=workspace_id,
-            max_delegations=5,
+            max_delegations=self.policy.delegations,
             history_store=JsonlHistoryStore(
                 self.data_dir / "histories" / f"{session_id}.jsonl"
             ),
         )
+        workflow.task_code_tools = self.policy.task_code_tools
+        return workflow

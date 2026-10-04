@@ -136,4 +136,5 @@ class MultiAgentCodeAgent:
             stop_reason=run_result.stop_reason,
             delivery_status=run_result.delivery_status,
             finalization_status=run_result.finalization_status,
+            finalization_diagnostics=run_result.finalization_diagnostics,
         )

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from tikiagent.context.preparation import ContextRuntime
 from tikiagent.tools.registry import RegisteredTool, ToolRegistry
+from tikiagent.providers.llm.staged import at_stage
 
 
 class DeliverySummary(BaseModel):
@@ -17,7 +18,8 @@ class DeliverySummary(BaseModel):
 def final_context(runtime, **kwargs):
     """收尾使用规则压缩，不能暗中增加 LLM 摘要调用；硬条件超限仍拒绝。"""
     return ContextRuntime(budget=runtime.budget, profiles=runtime.prompt_assembler.profiles,
-                          monitor=runtime.monitor, observer=runtime.observer).prepare(**kwargs)
+                          monitor=runtime.monitor, observer=runtime.observer,
+                          budget_resolver=runtime.budget_resolver).prepare(**kwargs)
 
 
 def complete_once(model, *, messages, tool_schemas):
@@ -42,7 +44,7 @@ def summarize_run(model, runtime, context, local_memory, *, reason):
     })
     prepared = final_context(runtime, base_context=context.model_copy(update={"working_memory": memory}),
                              local_memory=local_memory, registry=registry)
-    response = complete_once(model, messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
+    response = complete_once(at_stage(model, "code_final"), messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
     if len(response.tool_calls) == 1 and response.tool_calls[0].name == "submit_result":
         return DeliverySummary.model_validate(json.loads(response.tool_calls[0].arguments_json))
     # 普通文本不能提升 ready，仍可作为部分成果展示。

@@ -74,7 +74,9 @@ def test_research_finalization_receives_real_excerpt_and_constraints():
             self.calls += 1
             assert "new graph features" in str(messages)
             assert "原始委派约束" in str(messages)
-            return response_type(summary="已经发现来源", delivery_status="ready")
+            import hashlib
+            ref = "s-" + hashlib.sha256(b"https://example.com/release").hexdigest()[:12]
+            return response_type(summary="已经发现来源", findings=[{"text": "new graph features", "source_ids": [ref]}], delivery_status="ready")
     summary = Summary()
     result = ResearchAgent(model=ScriptedModel(), structured_model=summary, dispatcher=dispatcher(), max_steps=1).run(handoff=handoff())
     assert result.stop_reason == "max_steps"

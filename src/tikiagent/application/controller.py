@@ -70,10 +70,13 @@ class ApplicationController:
     def submit(self, *, session_id: str, user_input: str) -> ApplicationOutcome:
         session = self.sessions.sessions.load(session_id)
         has_history = bool(self.sessions.turns.list_records(session_id))
+        request_id = str(uuid4())
+        if getattr(self, "request_budget", None):
+            self.request_budget.bind(session_id, request_id)
         decision = self.router.route(user_input, has_history=has_history)
         if decision.intent == "WORKFLOW" and session.active_checkpoint_id is not None:
             raise ApplicationError("当前 Session 有待恢复 Workflow，不能启动新任务")
-        task_id = str(uuid4()) if decision.intent == "WORKFLOW" else None
+        task_id = request_id if decision.intent == "WORKFLOW" else None
         session, turn = self.sessions.record_turn(
             session_id=session_id,
             user_input=user_input,

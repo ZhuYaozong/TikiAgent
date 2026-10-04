@@ -878,6 +878,7 @@ class MultiAgentWorkflow:
             session_context_refs=session_context_refs,
         )
         state["history_cursor"] = self.history_store.cursor()
+        state["max_code_tool_calls"] = getattr(self, "task_code_tools", state["max_code_tool_calls"])
         return state
 
     def invoke(
