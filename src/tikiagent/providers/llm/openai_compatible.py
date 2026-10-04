@@ -7,6 +7,7 @@ import json
 from openai import OpenAI
 
 from tikiagent.providers.llm.config import ModelSettings
+from tikiagent.providers.llm.request import structured_messages
 from tikiagent.providers.llm.models import ModelResponse, ModelToolCall, StructuredModel
 from tikiagent.providers.llm.structured_output import (
     StructuredOutputError,
@@ -51,11 +52,13 @@ class OpenAICompatibleClient:
         messages: Sequence[Mapping[str, Any]],
         tool_schemas: Sequence[Mapping[str, Any]],
     ) -> ModelResponse:
+        self._check_budget(messages, self._convert_tools(tool_schemas))
         response = self.client.chat.completions.create(
             model=self.settings.model,
             messages=list(messages),
             tools=self._convert_tools(tool_schemas),
             tool_choice="auto",
+            max_tokens=self.settings.max_output_tokens,
         )
         message = response.choices[0].message
         model_tool_calls = tuple(
@@ -79,29 +82,16 @@ class OpenAICompatibleClient:
     ) -> StructuredModel:
         """使用 Schema 提示和本地校验获得结构化结果。"""
 
-        schema = json.dumps(
-            response_type.model_json_schema(),
-            ensure_ascii=False,
-            indent=2,
-        )
-        request_messages: list[dict[str, Any]] = [
-            {
-                "role": "system",
-                "content": (
-                    "只返回一个 JSON 对象，不要使用 Markdown。"
-                    "输出必须满足以下 JSON Schema：\n"
-                    f"{schema}"
-                ),
-            },
-            *[dict(message) for message in messages],
-        ]
+        request_messages = structured_messages(messages, response_type.model_json_schema())
         last_error: StructuredOutputError | None = None
 
         # 第一次失败时把校验错误作为 Observation，让模型修正一次。
         for attempt in range(2):
+            self._check_budget(request_messages, [])
             response = self.client.chat.completions.create(
                 model=self.settings.model,
                 messages=request_messages,
+                max_tokens=self.settings.max_output_tokens,
             )
             content = response.choices[0].message.content
             if content is not None:
@@ -130,3 +120,11 @@ class OpenAICompatibleClient:
         raise StructuredOutputError(
             f"模型连续两次未返回合法结构化结果：{last_error}"
         )
+
+    def _check_budget(self, messages, tools) -> None:
+        # 包括结构化重试追加的内容；供应商实际 tokenizer 仍可能有差异。
+        from tikiagent.context.compression.monitor import CharacterTokenEstimator
+
+        usage = CharacterTokenEstimator().estimate({"messages": list(messages), "tools": tools})
+        if usage + self.settings.max_output_tokens > self.settings.context_limit:
+            raise ValueError("最终模型请求超过输入预算，已阻止发送")

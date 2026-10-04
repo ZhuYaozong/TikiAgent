@@ -41,7 +41,7 @@ class ContextBuilder:
         task_board: TaskBoard,
     ) -> BaseContext:
         profile = self.profiles[request.agent]
-        history = self.retriever.retrieve(request, profile)
+        history = [self._history_view(record) for record in self.retriever.retrieve(request, profile)]
 
         if profile.include_global_task_board:
             todos = list(task_board.items.values())
@@ -78,6 +78,8 @@ class ContextBuilder:
             agent=request.agent,
             working_memory=WorkingMemory(
                 task=task,
+                task_id=request.task_id,
+                session_id=request.session_id,
                 phase=request.phase,
                 instruction=request.instruction,
                 acceptance_criteria=acceptance_criteria,
@@ -87,3 +89,25 @@ class ContextBuilder:
                 protected_refs=protected_refs,
             ),
         )
+
+    @staticmethod
+    def _history_view(record):
+        """长 Result 正文只展示摘录；身份与来源保留，原文仍在 History Store。"""
+
+        if record.record_type != "result":
+            return record
+        from copy import deepcopy
+
+        payload = deepcopy(record.payload)
+        changed = False
+        if isinstance(payload.get("summary"), str) and len(payload["summary"]) > 2000:
+            payload["summary"] = payload["summary"][:2000] + "…[结果摘要摘录]"
+            changed = True
+        for source in payload.get("sources", []):
+            if isinstance(source, dict) and isinstance(source.get("snippet"), str) and len(source["snippet"]) > 500:
+                source["snippet"] = source["snippet"][:500] + "…[来源摘录]"
+                changed = True
+        if not changed:
+            return record
+        payload["original_history_ref"] = record.record_id
+        return record.model_copy(update={"summary": record.summary[:2000], "payload": payload})

@@ -65,6 +65,8 @@ class VerificationReport(ControlModel):
     failures: list[str]
     evidence: list[str]
     recommendation: str
+    failure_category: Literal["permission", "budget", "identity", "validation", "unknown"] | None = None
+    retryable: bool | None = None
 
 
 SpecialistName = Literal["research_agent", "code_agent"]
@@ -91,6 +93,7 @@ class SupervisorDecision(ControlModel):
     instruction: str
     reason: str = Field(min_length=1)
     context_refs: list[str] = Field(default_factory=list)
+    todo_id: str | None = None
 
 
 class ResearchSource(ControlModel):

@@ -126,6 +126,10 @@ class TikiState(TypedDict):
     supervisor_plan: SupervisorPlan | None
     required_specialists: list[SpecialistName]
     supervisor_decision: SupervisorDecision | None
+    # 外层规划 Agent 的私有消息与待委派调用，随 Workflow Snapshot 恢复。
+    supervisor_runtime: NotRequired[dict[str, Any]]
+    results_by_id: NotRequired[dict[str, dict[str, Any]]]
+    verifications_by_id: NotRequired[dict[str, dict[str, Any]]]
     delegation_count: int
     max_delegations: int
     code_tool_call_count: NotRequired[int]
@@ -178,8 +182,16 @@ def restore_tiki_state(payload: dict[str, Any]) -> TikiState:
         "session_context_refs": [],
         "code_tool_call_count": 0,
         "max_code_tool_calls": 60,
+        "supervisor_runtime": {},
+        "results_by_id": {},
+        "verifications_by_id": {},
         **payload,
     }
+    # 老快照只有按 Agent 保存的最新结果；按原身份建立索引，不推测额外历史。
+    if not migrated["results_by_id"]:
+        migrated["results_by_id"] = {r["result_id"]: r for r in payload.get("specialist_results", {}).values() if r.get("result_id")}
+    if not migrated["verifications_by_id"]:
+        migrated["verifications_by_id"] = {r["verification_id"]: r for r in payload.get("specialist_verifications", {}).values() if r.get("verification_id")}
     return _TIKI_STATE_ADAPTER.validate_python(migrated)
 
 

@@ -14,7 +14,7 @@ class TokenEstimator(Protocol):
 
 
 class CharacterTokenEstimator:
-    """确定性 v1 估算器：约四个字符计一个 Token。"""
+    """保守近似：ASCII 约四字符/token，非 ASCII 按二 token/字符。"""
 
     def estimate(self, value: Any) -> int:
         if value in (None, "", [], {}, ()):
@@ -24,7 +24,8 @@ class CharacterTokenEstimator:
             if isinstance(value, str)
             else json.dumps(value, ensure_ascii=False, default=str)
         )
-        return max(1, (len(text) + 3) // 4)
+        ascii_chars = sum(ord(char) < 128 for char in text)
+        return max(1, (ascii_chars + 3) // 4 + (len(text) - ascii_chars) * 2)
 
 
 class ContextMonitor:
@@ -82,6 +83,14 @@ class ContextMonitor:
                 response_schema_tokens,
             ]
         )
+        # 统计最终 messages 与工具协议开销；分项只是归因，总量不能低于真实发送体估算。
+        request_total = self.estimator.estimate({
+            "messages": candidate.messages,
+            "tools": [{"type": "function", "function": schema} for schema in candidate.tool_view.schemas],
+        })
+        overhead = max(0, request_total - total)
+        prompt_tokens += overhead
+        total += overhead
         base_total = base_tokens + history_tokens + notepad_tokens
         return ContextUsage(
             prompt_tokens=prompt_tokens,
@@ -93,7 +102,7 @@ class ContextMonitor:
             response_schema_tokens=response_schema_tokens,
             total_call_usage=total,
             available_input_budget=budget.available_input_budget,
-            base_over_budget=base_total > budget.base_context_budget,
-            local_over_budget=local_tokens > budget.local_messages_budget,
+            base_over_budget=(base_total > budget.base_context_budget or total > budget.available_input_budget * budget.compression_trigger_ratio),
+            local_over_budget=(local_tokens > budget.local_messages_budget or total > budget.available_input_budget * budget.compression_trigger_ratio),
             total_over_budget=total > budget.available_input_budget,
         )

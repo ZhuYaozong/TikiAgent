@@ -24,6 +24,7 @@ class SpecialistVerifier(Protocol):
 
 class VerificationGate:
     """选择验证策略，并强制 Result/Handoff/Report 三者关联一致。"""
+    supports_related_results = True
 
     def __init__(
         self,
@@ -47,6 +48,7 @@ class VerificationGate:
         raw_result: dict[str, Any],
         specialist_results: dict[str, dict[str, Any]],
         execution_context: ExecutionContext | None = None,
+        research_results: list[dict[str, Any]] | None = None,
     ) -> VerificationReport:
         result_type = (
             ResearchResult
@@ -88,18 +90,21 @@ class VerificationGate:
             )
 
         verifier = self.verifiers[handoff.to_agent]
+        related_kwargs = {"research_results": research_results} if getattr(verifier, "supports_related_results", False) else {}
         if getattr(verifier, "supports_harness", False):
             report = verifier.verify(
                 handoff=handoff,
                 result=result,
                 specialist_results=specialist_results,
                 execution_context=execution_context,
+                **related_kwargs,
             )
         else:
             report = verifier.verify(
                 handoff=handoff,
                 result=result,
                 specialist_results=specialist_results,
+                **related_kwargs,
             )
         if (
             report.result_id != result.result_id
@@ -111,6 +116,18 @@ class VerificationGate:
                 result.result_id,
                 "Verifier 返回了指向其他 Result/Handoff 的报告",
             )
+        if not report.passed:
+            category, retryable = "validation", True
+            if isinstance(result, CodeResult) and result.stop_reason:
+                category, retryable = "budget", False
+            elif isinstance(result, CodeResult) and result.tool_results:
+                last = result.tool_results[-1]
+                error = last.get("error") or {}
+                if error.get("code") in {"permission_denied", "approval_rejected", "tool_not_exposed", "workspace_escape"}:
+                    category, retryable = "permission", False
+                elif last.get("ok") is False:
+                    category, retryable = "unknown", None
+            report = report.model_copy(update={"failure_category": category, "retryable": retryable})
         return report
 
     @staticmethod
@@ -138,4 +155,6 @@ class VerificationGate:
             failures=[f"{check.name}: {check.evidence}"],
             evidence=[check.evidence],
             recommendation="身份关联失败，禁止 Supervisor FINISH",
+            failure_category="identity",
+            retryable=False,
         )

@@ -28,6 +28,14 @@ class TuiEventPresenter:
             return self._item(event, "routing", "Intent Router", event.message)
         if kind == "supervisor_decision":
             return self._item(event, "routing", "Supervisor", event.message)
+        if kind == "context_prepared":
+            actions = event.data.get("actions") or event.data.get("compression")
+            failures = event.data.get("compression_events", [])
+            if not actions and not failures:
+                return None
+            before = event.data.get("before", {}).get("total_call_usage", "?")
+            after = event.data.get("after", {}).get("total_call_usage", "?")
+            return self._item(event, "agent", "Context", f"上下文估算：{before} → {after}", detail=str(failures))
         if kind == "agent_started":
             agent = str(event.data.get("agent") or event.message.removeprefix("进入 "))
             return self._item(event, "agent", _agent_name(agent), "开始执行")

@@ -117,6 +117,19 @@ def research_result() -> ResearchResult:
     )
 
 
+def test_multiple_research_results_use_current_handoff_dependencies(tmp_path):
+    original = research_result()
+    unrelated = original.model_copy(update={"result_id": "later-research", "sources": [
+        original.sources[0].model_copy(update={"url": "https://example.com/unrelated"}),
+    ]})
+    (tmp_path / "report.txt").write_text("来源：https://example.com/source", encoding="utf-8")
+    verifier, _, context = build_verifier(tmp_path)
+    report = verifier.verify(handoff=handoff(), result=code_result(["report.txt"]),
+                             specialist_results={"research_agent": unrelated.model_dump(mode="json")},
+                             research_results=[original.model_dump(mode="json")], execution_context=context)
+    assert report.passed
+
+
 def test_python_artifacts_run_real_unittest_through_harness(tmp_path: Path) -> None:
     (tmp_path / "calculator.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
     (tmp_path / "test_calculator.py").write_text(

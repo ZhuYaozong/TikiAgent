@@ -4,10 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import os
+from dotenv import load_dotenv
 
 from tikiagent.agents.code import MultiAgentCodeAgent
 from tikiagent.agents.research import ResearchAgent
-from tikiagent.agents.supervisor import SupervisorAgent
+from tikiagent.agents.planning import PlanningSupervisorAgent
+from tikiagent.context.compression.llm import SummaryEngine, LLMBaseCompressor, LLMLocalCompressor
+from tikiagent.context.compression.models import ContextBudget
+from tikiagent.context.preparation import ContextRuntime
+from tikiagent.context.profiles import DEFAULT_CONTEXT_PROFILES
+from tikiagent.application.models import EventScope
 from tikiagent.application.chat import ModelChatService
 from tikiagent.application.context_refs import SessionContextReferenceProvider
 from tikiagent.application.controller import ApplicationController
@@ -86,11 +93,13 @@ class LazyResearchAgent:
         self,
         model: LazyOpenAICompatibleClient,
         env_file: str | Path,
+        context_runtime: ContextRuntime | None = None,
     ) -> None:
         self.model = model
         self.env_file = env_file
         self.agent: ResearchAgent | None = None
         self.supports_harness = True
+        self.context_runtime = context_runtime
 
     def run(
         self,
@@ -108,6 +117,7 @@ class LazyResearchAgent:
                 structured_model=self.model,
                 dispatcher=dispatcher,
                 execution_harness=ExecutionHarness(dispatcher),
+                context_runtime=self.context_runtime,
             )
         return self.agent.run(
             handoff,
@@ -158,6 +168,41 @@ class ApplicationRuntimeFactory:
         )
 
     def _build_workflow(self, session_id: str, workspace_id: str) -> MultiAgentWorkflow:
+        # 预算配置不要求密钥；保持本地 status/测试和依赖装配的惰性初始化。
+        load_dotenv(self.env_file)
+        context_limit = int(os.getenv("TIKI_LLM_CONTEXT_LIMIT", "32000"))
+        output_tokens = int(os.getenv("TIKI_LLM_MAX_OUTPUT_TOKENS", "2000"))
+        trace = JsonlTraceStore(self.data_dir / "traces" / f"{session_id}.jsonl")
+
+        def observe(event_type, state, correlation_id, data):
+            # 编排事件源于实际操作；统一脱敏分发，Trace 不承担恢复职责。
+            scope = EventScope(session_id=session_id, workspace_id=workspace_id, task_id=state.get("task_id"))
+            message = f"{data['tool_name']}: {event_type}" if data.get("tool_name") else event_type
+            event = self.event_bus.emit(event_type, scope=scope, source="workflow_runtime_adapter",
+                                       correlation_id=correlation_id, message=message, data=data)
+            try:
+                trace.append(run_id=state.get("task_id") or session_id, event_type=event_type,
+                             tool_call_id=correlation_id, details=event.data)
+            except OSError:
+                # Trace 落盘失败不能改变实际执行或 Checkpoint 的恢复事实。
+                pass
+
+        def context_observer(base, data):
+            observe("context_prepared", {"task_id": base.working_memory.task_id or None},
+                    base.working_memory.task_id or session_id, data)
+
+        def context_runtime(*, code=False):
+            engine = SummaryEngine(self.model, input_budget=max(256, context_limit - output_tokens - 1000))
+            profiles = None
+            if code:
+                profile = DEFAULT_CONTEXT_PROFILES["code_agent"]
+                profiles = {"code_agent": profile.model_copy(update={"system_rules": [CODE_SYSTEM_PROMPT.strip(), *profile.system_rules]})}
+            return ContextRuntime(
+                budget=ContextBudget(model_context_limit=context_limit, reserved_output_tokens=output_tokens),
+                profiles=profiles, base_compressor=LLMBaseCompressor(engine), local_compressor=LLMLocalCompressor(engine),
+                observer=context_observer,
+            )
+
         # 物理目录按 Session 隔离；workspace_id 仍用于 Scope/Approval 身份绑定。
         workspace = Workspace(self.data_dir / "workspaces" / session_id)
         code_registry = build_file_registry(workspace)
@@ -166,7 +211,7 @@ class ApplicationRuntimeFactory:
         coordinator = ExecutionCoordinator(
             ExecutionHarness(code_dispatcher),
             self.checkpoints,
-            JsonlTraceStore(self.data_dir / "traces" / f"{session_id}.jsonl"),
+            trace,
             lifecycle_observer=HarnessEventForwarder(self.event_bus),
         )
         code_agent = MultiAgentCodeAgent(
@@ -176,6 +221,7 @@ class ApplicationRuntimeFactory:
                 system_prompt=CODE_SYSTEM_PROMPT,
                 max_steps=12,
                 execution_coordinator=coordinator,
+                context_runtime=context_runtime(code=True),
             )
         )
 
@@ -209,8 +255,8 @@ class ApplicationRuntimeFactory:
             ),
         )
         return MultiAgentWorkflow(
-            supervisor=SupervisorAgent(self.model),
-            research_agent=LazyResearchAgent(self.model, self.env_file),
+            supervisor=PlanningSupervisorAgent(self.model, context_runtime=context_runtime(), observer=observe),
+            research_agent=LazyResearchAgent(self.model, self.env_file, context_runtime=context_runtime()),
             code_agent=code_agent,
             verification_gate=gate,
             workspace_id=workspace_id,

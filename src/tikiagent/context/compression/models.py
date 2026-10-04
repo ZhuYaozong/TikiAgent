@@ -15,6 +15,8 @@ class ContextBudget(ContextModel):
     base_context_budget: int = Field(default=12_000, gt=0)
     local_messages_budget: int = Field(default=10_000, gt=0)
     recent_interaction_limit: int = Field(default=4, gt=0)
+    recent_tokens_budget: int = Field(default=6_000, gt=0)
+    compression_trigger_ratio: float = Field(default=0.85, gt=0, le=1)
 
     @model_validator(mode="after")
     def validate_output_reservation(self) -> ContextBudget:

@@ -23,6 +23,7 @@ from tikiagent.verification.inspection import verify_inspection
 
 class ArtifactAwareCodeVerifier:
     """根据当前 Result 的真实 Artifact 类型选择确定性环境验证。"""
+    supports_related_results = True
 
     def __init__(
         self,
@@ -47,6 +48,7 @@ class ArtifactAwareCodeVerifier:
         result: CodeResult,
         specialist_results: dict[str, dict[str, Any]],
         execution_context: ExecutionContext | None = None,
+        research_results: list[dict[str, Any]] | None = None,
     ) -> VerificationReport:
         checks = [
             VerificationCheck(
@@ -144,7 +146,8 @@ class ArtifactAwareCodeVerifier:
             )
 
         raw_research = specialist_results.get("research_agent")
-        if raw_research is not None:
+        related = research_results if research_results is not None else ([raw_research] if raw_research else [])
+        for raw_research in related:
             research = ResearchResult.model_validate(raw_research)
             urls = [source.url for source in research.sources]
             matched = [url for url in urls if any(url in text for text in contents.values())]

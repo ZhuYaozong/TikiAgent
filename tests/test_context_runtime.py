@@ -162,7 +162,8 @@ def test_runtime_compresses_then_reassembles_prepared_call() -> None:
     assert prepared.notepad_candidates
     assert prepared.notepad_candidates[0].approved is False
     # Prepared 的 messages 必须来自压缩后部件的重新组装。
-    assert prepared.local_memory.summary in prepared.messages[0]["content"]
+    assert prepared.local_memory.summary not in prepared.messages[0]["content"]
+    assert any(prepared.local_memory.summary in message.get("content", "") for message in prepared.messages if message["role"] == "user")
 
 
 def test_base_and_local_compressors_have_independent_protocols() -> None:
