@@ -18,7 +18,7 @@ class TuiEventPresenter:
         if kind == "final_answer":
             return self._item(
                 event,
-                "assistant",
+                "error" if event.data.get("error_category") else "assistant",
                 "TikiAgent",
                 _first_line(event.message),
                 detail=event.message,

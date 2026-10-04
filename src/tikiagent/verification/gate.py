@@ -4,6 +4,9 @@ from typing import Any, Protocol
 
 from tikiagent.harness.scope import ExecutionContext
 from tikiagent.orchestration.requirements import assessments_valid
+from tikiagent.verification.failures import execution_failure, failure_report
+from tikiagent.providers.llm.openai_compatible import ModelOutputError
+from tikiagent.context.preparation import ContextBudgetExceeded
 from tikiagent.verification.research import ResearchResultVerifier
 from tikiagent.orchestration.contracts import (
     CodeResult,
@@ -94,26 +97,21 @@ class VerificationGate:
             )
 
         verifier = self.verifiers[handoff.to_agent]
+        delivery = getattr(result, "delivery_status", None)
+        if delivery in {"none", "partial"} or (delivery is None and isinstance(result, CodeResult) and not result.completed):
+            return execution_failure(handoff, result)
         related_kwargs = {"research_results": research_results} if getattr(verifier, "supports_related_results", False) else {}
         if getattr(verifier, "supports_context", False):
             related_kwargs["base_context"] = base_context
             if not handoff.acceptance_criteria:
                 return self._identity_failure(handoff, result.result_id, "缺少冻结验收契约，请重新规划；旧快照不能自动通过")
         if getattr(verifier, "supports_harness", False):
-            report = verifier.verify(
-                handoff=handoff,
-                result=result,
-                specialist_results=specialist_results,
-                execution_context=execution_context,
-                **related_kwargs,
-            )
-        else:
-            report = verifier.verify(
-                handoff=handoff,
-                result=result,
-                specialist_results=specialist_results,
-                **related_kwargs,
-            )
+            related_kwargs["execution_context"] = execution_context
+        try:
+            report = verifier.verify(handoff=handoff, result=result, specialist_results=specialist_results, **related_kwargs)
+        except (ModelOutputError, ContextBudgetExceeded) as error:
+            return failure_report(handoff, result, "model_response" if isinstance(error, ModelOutputError) else "budget",
+                                  f"验证未完成：{type(error).__name__}")
         if (
             report.result_id != result.result_id
             or report.handoff_id != handoff.handoff_id
@@ -128,9 +126,7 @@ class VerificationGate:
             category, retryable = report.failure_category or "validation", report.retryable
             if report.failure_category is None:
                 retryable = True
-            if isinstance(result, CodeResult) and result.stop_reason:
-                category, retryable = "budget", False
-            elif isinstance(result, CodeResult) and result.tool_results:
+            if isinstance(result, CodeResult) and result.tool_results:
                 last = result.tool_results[-1]
                 error = last.get("error") or {}
                 if error.get("code") in {"permission_denied", "approval_rejected", "tool_not_exposed", "workspace_escape"}:
@@ -139,7 +135,7 @@ class VerificationGate:
                     category, retryable = "unknown", None
             report = report.model_copy(update={"failure_category": category, "retryable": retryable,
                 "blocking_reason": report.blocking_reason or "; ".join(report.failures)})
-        if isinstance(result, CodeResult) and (result.stop_reason or not result.completed):
+        if isinstance(result, CodeResult) and delivery is None and (result.stop_reason or not result.completed):
             reason = result.stop_reason or "CodeAgent 未完成当前委派"
             last_error = (result.tool_results[-1].get("error") or {}) if result.tool_results else {}
             category = "permission" if last_error.get("code") in {"permission_denied", "approval_rejected", "tool_not_exposed", "workspace_escape"} else "budget" if result.stop_reason else "validation"

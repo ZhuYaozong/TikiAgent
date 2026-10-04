@@ -124,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     print(outcome.model_dump_json(indent=2))
-    return 0
+    return 1 if outcome.status in {"chat_failed", "workflow_failed", "workflow_denied"} else 0
 
 
 if __name__ == "__main__":

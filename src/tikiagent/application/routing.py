@@ -77,6 +77,7 @@ class StructuredIntentRouter:
                     "你是 TikiAgent 的入口路由器，只判断 CHAT 或 WORKFLOW。"
                     "需要搜索、文件、代码、Shell、多步骤执行或引用先前结果继续操作时"
                     "选择 WORKFLOW；只需文本解释或普通对话时选择 CHAT。"
+                    "仅回顾本会话聊过什么、解释已有回复属于 CHAT，不需要联网或访问工作区；若用户同时要求继续实际操作才进入 WORKFLOW。"
                     "不要规划任务，不要选择 Agent 或 Tool。"
                 ),
             },

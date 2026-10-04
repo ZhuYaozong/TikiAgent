@@ -48,6 +48,7 @@ class ContextMonitor:
             "acceptance_criteria": memory.acceptance_criteria,
             "todos": [item.model_dump(mode="json") for item in memory.todos],
             "protected_refs": memory.protected_refs,
+            "control_facts": memory.control_facts,
         }
         history_payload = {
             "summary": memory.history_summary,

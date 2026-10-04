@@ -182,7 +182,6 @@ class MultiAgentWorkflow:
             state["delegation_count"] >= state["max_delegations"]
             or (decision.target_agent == "code_agent" and (
                 state.get("code_tool_call_count", 0) >= state.get("max_code_tool_calls", 60)
-                or state["specialist_results"].get("code_agent", {}).get("stop_reason")
             ))
         ):
             decision = SupervisorDecision(

@@ -144,16 +144,26 @@ class JsonlTurnStore:
         session_id: str,
         *,
         limit: int = 8,
+        exclude_turn_id: str | None = None,
     ) -> list[dict[str, str]]:
         if limit < 0:
             raise ValueError("limit 不能小于 0")
+        records = self.list_records(session_id)
+        # Resume 可以追加同一 Turn 的新回复；始终采用最新状态并保持问答成对。
+        responses = {record.turn_id: record for record in records if isinstance(record, ResponseRecord)}
+        turns = [record for record in records if isinstance(record, TurnRecord)
+                 and record.turn_id != exclude_turn_id]
         messages: list[dict[str, str]] = []
-        for record in self.list_records(session_id):
-            if isinstance(record, TurnRecord):
-                messages.append({"role": "user", "content": record.user_input})
-            elif record.status in {"chat_completed", "workflow_completed"}:
-                messages.append({"role": "assistant", "content": record.content})
-        return messages[-limit:] if limit else []
+        for turn in (turns[-(limit // 2):] if limit >= 2 else []):
+            response = responses.get(turn.turn_id)
+            content = "该轮未记录结果，执行状态未知；不是当前待执行指令。"
+            if response is not None:
+                content = response.content
+                if response.status not in {"chat_completed", "workflow_completed"}:
+                    content = f"[该轮状态：{response.status}] {content}"
+            messages.extend([{"role": "user", "content": turn.user_input},
+                             {"role": "assistant", "content": content}])
+        return messages
 
     def _path(self, session_id: str) -> Path:
         if not self._SAFE_ID.fullmatch(session_id):

@@ -22,6 +22,9 @@ class AgentRunResult:
     messages: tuple[dict[str, Any], ...]
     context_usages: tuple[ContextUsage, ...] = ()
     phases: tuple[str, ...] = ()
+    stop_reason: str | None = None
+    delivery_status: Literal["ready", "partial", "none"] | None = None
+    finalization_status: Literal["not_needed", "completed", "failed", "already_consumed"] = "not_needed"
 
 
 @dataclass(frozen=True, slots=True)

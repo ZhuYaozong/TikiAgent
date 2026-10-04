@@ -106,15 +106,19 @@ class TikiWorkflowAdapter:
         workflow = self.workflow_factory(scope.session_id, workspace_id)
         state: TikiState | None = None
         previous: TikiState | None = None
-        for snapshot in workflow.stream(
-            task,
-            session_id=scope.session_id,
-            task_id=task_id,
-            session_context_refs=context_refs,
-        ):
-            self._emit_snapshot(previous, snapshot, scope)
-            previous = snapshot
-            state = snapshot
+        try:
+            for snapshot in workflow.stream(
+                task,
+                session_id=scope.session_id,
+                task_id=task_id,
+                session_context_refs=context_refs,
+            ):
+                self._emit_snapshot(previous, snapshot, scope)
+                previous = snapshot
+                state = snapshot
+        except Exception as error:
+            self._emit_execution_error(scope, error)
+            raise
         if state is None:
             raise RuntimeError("Multi-Agent Workflow 没有产生状态")
         self._emit_workflow_result(state, scope)
@@ -232,16 +236,29 @@ class TikiWorkflowAdapter:
             message="通过 Graph Resume Entry 恢复 Workflow",
             data={"expected_revision": expected_revision},
         )
-        state = workflow.resume(
-            checkpoint.checkpoint_id,
-            expected_revision=expected_revision,
-            approval_decision=approval_decision,
-            recovery_decision=recovery_decision,
-            reconciliation=reconciliation,
-        )
+        try:
+            state = workflow.resume(
+                checkpoint.checkpoint_id,
+                expected_revision=expected_revision,
+                approval_decision=approval_decision,
+                recovery_decision=recovery_decision,
+                reconciliation=reconciliation,
+            )
+        except Exception as error:
+            self._emit_execution_error(scope.model_copy(update={"task_id": checkpoint.scope.task_id}), error)
+            raise
         resumed_scope = scope.model_copy(update={"task_id": state["task_id"]})
         self._emit_workflow_result(state, resumed_scope)
         return self._from_state(state, workspace_id)
+
+    def _emit_execution_error(self, scope: EventScope, error: Exception) -> None:
+        # Trace/Event 记录失败事实，不承担恢复决策，不输出供应商异常正文。
+        self.event_bus.emit(
+            "workflow_failed", scope=scope, source="workflow_adapter",
+            correlation_id=scope.task_id or scope.session_id,
+            message=f"Workflow 执行中止：{type(error).__name__}",
+            data={"error_type": type(error).__name__},
+        )
 
     def _load_scoped(
         self,

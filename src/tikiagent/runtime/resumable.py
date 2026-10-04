@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 import json
+from uuid import uuid4
 
 from tikiagent.context.compression.models import ContextUsage
 from tikiagent.context.memory.local import LocalMemoryManager
@@ -26,6 +27,10 @@ from tikiagent.runtime.models import (
 )
 from tikiagent.runtime.react import ReActAgent
 from tikiagent.runtime.guard import AgentLoopStopped, ToolLoopGuard
+from tikiagent.runtime.lifecycle import summarize_run
+from tikiagent.harness.persistence.finalization import FinalizationLedger
+from tikiagent.providers.llm.openai_compatible import ModelOutputError
+from tikiagent.context.preparation import ContextBudgetExceeded
 from tikiagent.tools.models import ToolError, ToolResult
 
 
@@ -42,6 +47,7 @@ class ResumableReActAgent(ReActAgent):
         self.execution_coordinator = execution_coordinator
         self.max_tool_calls = max_tool_calls
         self.repeated_failure_limit = repeated_failure_limit
+        self.finalizations = FinalizationLedger(execution_coordinator.checkpoint_store.root / "finalizations")
 
     def _guard(self, workflow, snapshot=None, legacy_calls=0) -> ToolLoopGuard:
         remaining = max(0, workflow.state.get("max_code_tool_calls", 60)
@@ -88,7 +94,7 @@ class ResumableReActAgent(ReActAgent):
             start_step=1,
             execution_context=execution_context,
             workflow_snapshot=workflow_snapshot,
-            run_id=None,
+            run_id=str(uuid4()),
         )
 
     def resume(
@@ -189,19 +195,27 @@ class ResumableReActAgent(ReActAgent):
     ) -> AgentRunOutcome:
         guard = guard or self._guard(workflow_snapshot, legacy_calls=len(tool_results))
         for step in range(start_step, self.max_steps + 1):
-            prepared = self.context_runtime.prepare(
-                base_context=context,
-                local_memory=local.memory,
-                registry=self.dispatcher.registry,
-            )
+            if guard.calls_used >= guard.max_calls:
+                return self._finalize(context, local, tool_results, context_usages, phases, step - 1,
+                                      "tool_budget_exhausted", execution_context, run_id)
+            try:
+                prepared = self.context_runtime.prepare(
+                    base_context=context,
+                    local_memory=local.memory,
+                    registry=self.dispatcher.registry,
+                )
+            except ContextBudgetExceeded:
+                return self._finalize(context, local, tool_results, context_usages, phases, step - 1,
+                                      "context_budget_exhausted", execution_context, run_id)
             context = prepared.base_context
             local.replace(prepared.local_memory)
             context_usages.append(prepared.usage)
             phases.append(context.working_memory.phase)
-            response = self.model.complete(
-                messages=prepared.messages,
-                tool_schemas=prepared.tool_view.schemas,
-            )
+            try:
+                response = self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
+            except ModelOutputError:
+                return self._finalize(context, local, tool_results, context_usages, phases, step,
+                                      "model_response", execution_context, run_id)
             if response.tool_calls:
                 calls = [
                     PendingModelToolCall(
@@ -213,8 +227,17 @@ class ResumableReActAgent(ReActAgent):
                 ]
                 assistant = self._canonical_assistant_message(response)
                 step_results: list[ToolResult] = []
+                stop_reason = None
                 for index, call in enumerate(calls):
-                    self._check_guard(guard, call, step, tool_results, context_usages, phases)
+                    try:
+                        if stop_reason is None:
+                            guard.check(call.name, call.arguments_json)
+                    except AgentLoopStopped as error:
+                        stop_reason = error.reason
+                    if stop_reason is not None:
+                        # 补齐本批剩余配对，但不伪装为真实执行或消耗工具调用额度。
+                        step_results.append(self._unexecuted(call, stop_reason))
+                        continue
                     snapshot = self._snapshot(
                         task=context.render(),
                         step=step,
@@ -244,6 +267,9 @@ class ResumableReActAgent(ReActAgent):
                     guard.record(call.name, call.arguments_json, result)
                 self._append_interaction(local, step, assistant, step_results)
                 context = self._transition_context(context, step_results)
+                if stop_reason:
+                    return self._finalize(context, local, tool_results, context_usages, phases, step,
+                                          stop_reason, execution_context, run_id)
                 continue
             if response.final_text is not None:
                 return AgentRunResult(
@@ -255,12 +281,32 @@ class ResumableReActAgent(ReActAgent):
                     phases=tuple(phases),
                 )
             raise RuntimeError("模型既没有返回 ToolCall，也没有最终文本")
-        error = AgentLoopStopped("max_steps", f"Agent 超过最大步数：{self.max_steps}")
-        error.run_result = AgentRunResult(
-            final_text=str(error), steps=self.max_steps, tool_results=tuple(tool_results),
-            messages=(), context_usages=tuple(context_usages), phases=tuple(phases),
-        )
-        raise error
+        return self._finalize(context, local, tool_results, context_usages, phases, self.max_steps,
+                              "max_steps", execution_context, run_id)
+
+    @staticmethod
+    def _unexecuted(call, reason):
+        return ToolResult(tool_call_id=call.tool_call_id, tool_name=call.name, ok=False,
+                          error=ToolError(code=reason, message="执行已停止，本项未执行；请总结已有成果"))
+
+    def _finalize(self, context, local, tool_results, usages, phases, step, reason, execution_context, run_id):
+        scope = execution_context.scope
+        identity = f"{scope.session_id}/{scope.workspace_id}/{scope.task_id}/code/{run_id}"
+        summary = f"执行停止：{reason}；已返回 {len(tool_results)} 项工具结果，交付尚未完成确认。"
+        delivery = "partial" if tool_results else "none"
+        status = "already_consumed"
+        if self.finalizations.claim(identity, reason):
+            status = "failed"
+            try:
+                result = summarize_run(self.model, self.context_runtime, context, local.memory, reason=reason)
+                summary, delivery, status = result.summary, result.delivery_status, "completed"
+            except Exception:
+                # 收尾错误只使用受控信息回退，不触发第二次生成或执行工具。
+                pass
+            self.finalizations.finish(identity, status)
+        return AgentRunResult(final_text=summary, steps=step, tool_results=tuple(tool_results),
+                              messages=(), context_usages=tuple(usages), phases=tuple(phases),
+                              stop_reason=reason, delivery_status=delivery, finalization_status=status)
 
     def _continue_from_checkpoint(self, checkpoint) -> AgentRunOutcome:
         snapshot = checkpoint.react_snapshot
@@ -283,12 +329,20 @@ class ResumableReActAgent(ReActAgent):
             agent=checkpoint.agent,
             exposed_tools=checkpoint.exposed_tools,
         )
+        stop_reason = None
         for index in range(
             snapshot.next_tool_index + 1,
             len(snapshot.pending_tool_calls),
         ):
             call = snapshot.pending_tool_calls[index]
-            self._check_guard(guard, call, snapshot.step, tool_results, usages, phases)
+            try:
+                if stop_reason is None:
+                    guard.check(call.name, call.arguments_json)
+            except AgentLoopStopped as error:
+                stop_reason = error.reason
+            if stop_reason:
+                step_results.append(self._unexecuted(call, stop_reason))
+                continue
             next_snapshot = self._snapshot(
                 task=snapshot.task,
                 step=snapshot.step,
@@ -323,6 +377,9 @@ class ResumableReActAgent(ReActAgent):
             step_results,
         )
         context = self._transition_context(context, step_results)
+        if stop_reason:
+            return self._finalize(context, local, tool_results, usages, phases, snapshot.step,
+                                  stop_reason, execution_context, checkpoint.identity.run_id)
         return self._run_loop(
             context=context,
             local=local,

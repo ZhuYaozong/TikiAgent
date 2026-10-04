@@ -72,6 +72,9 @@ class VerificationReport(ControlModel):
     assessments: list[CriterionAssessment] = Field(default_factory=list)
     evidence_records: dict[str, dict[str, Any]] = Field(default_factory=dict)
     blocking_reason: str | None = None
+    verification_status: Literal["assessed", "not_performed"] = "assessed"
+    failure_scope: Literal["run", "todo", "workflow"] = "todo"
+    allowed_actions: list[Literal["stop", "replan", "retry"]] = Field(default_factory=list)
 
 
 SpecialistName = Literal["research_agent", "code_agent"]
@@ -129,6 +132,9 @@ class ResearchResult(ControlModel):
     observations: list[ResearchObservation] = Field(default_factory=list)
     queries: list[str] = Field(default_factory=list)
     unresolved_questions: list[str] = Field(default_factory=list)
+    stop_reason: str | None = None
+    delivery_status: Literal["ready", "partial", "none"] | None = None
+    finalization_status: str = "not_needed"
 
 
 class CodeResult(ControlModel):
@@ -144,6 +150,8 @@ class CodeResult(ControlModel):
     context_refs_used: list[str] = Field(default_factory=list)
     tool_results: tuple[dict[str, Any], ...] = ()
     stop_reason: str | None = None
+    delivery_status: Literal["ready", "partial", "none"] | None = None
+    finalization_status: str = "not_needed"
 
 
 class Handoff(ControlModel):

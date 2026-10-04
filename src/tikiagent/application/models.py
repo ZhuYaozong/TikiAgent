@@ -13,6 +13,7 @@ Intent = Literal["CHAT", "WORKFLOW"]
 ApplicationStatus = Literal[
     "session_created",
     "chat_completed",
+    "chat_failed",
     "awaiting_approval",
     "recovery_required",
     "awaiting_reconcile",
@@ -41,6 +42,7 @@ ApplicationEventType = Literal[
     "specialist_result",
     "verification_completed",
     "workflow_retried",
+    "workflow_failed",
     "workflow_completed",
     "workflow_denied",
     "tool_call_requested",
@@ -110,6 +112,8 @@ class ResponseRecord(ApplicationModel):
     status: ApplicationStatus
     content: str = Field(min_length=1)
     checkpoint_id: str | None = None
+    error_category: str | None = None
+    error_stage: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -158,6 +162,8 @@ class ApplicationOutcome(ApplicationModel):
     status: ApplicationStatus
     session_id: str
     message: str
+    error_category: str | None = None
+    error_stage: str | None = None
     turn_id: str | None = None
     task_id: str | None = None
     run_id: str | None = None

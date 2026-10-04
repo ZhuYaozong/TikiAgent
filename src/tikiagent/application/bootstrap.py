@@ -14,6 +14,7 @@ from tikiagent.context.compression.llm import SummaryEngine, LLMBaseCompressor, 
 from tikiagent.context.compression.models import ContextBudget
 from tikiagent.context.preparation import ContextRuntime
 from tikiagent.context.profiles import DEFAULT_CONTEXT_PROFILES
+from tikiagent.harness.persistence.finalization import FinalizationLedger
 from tikiagent.application.models import EventScope
 from tikiagent.application.chat import ModelChatService
 from tikiagent.application.context_refs import SessionContextReferenceProvider
@@ -83,6 +84,12 @@ class LazyOpenAICompatibleClient:
     def complete_structured(self, messages, response_type):
         return self._get().complete_structured(messages, response_type)
 
+    def complete_once(self, messages, tool_schemas):
+        return self._get().complete_once(messages, tool_schemas)
+
+    def complete_structured_once(self, messages, response_type):
+        return self._get().complete_structured_once(messages, response_type)
+
 
 class LazyResearchAgent:
     """只有 Supervisor 路由到 ResearchAgent 时才加载 Tavily 配置。"""
@@ -92,12 +99,14 @@ class LazyResearchAgent:
         model: LazyOpenAICompatibleClient,
         env_file: str | Path,
         context_runtime: ContextRuntime | None = None,
+        finalizations=None,
     ) -> None:
         self.model = model
         self.env_file = env_file
         self.agent: ResearchAgent | None = None
         self.supports_harness = True
         self.context_runtime = context_runtime
+        self.finalizations = finalizations
 
     def run(
         self,
@@ -116,6 +125,7 @@ class LazyResearchAgent:
                 dispatcher=dispatcher,
                 execution_harness=ExecutionHarness(dispatcher),
                 context_runtime=self.context_runtime,
+                finalizations=self.finalizations,
             )
         return self.agent.run(
             handoff,
@@ -228,14 +238,15 @@ class ApplicationRuntimeFactory:
         # 验证 Agent 仅拥有受控取证入口，Gate 仍负责身份与验收完整性硬检查。
         verifier_registry = build_read_only_file_registry(workspace)
         register_python_environment_tools(verifier_registry, workspace, tests=True)
-        verifier = VerifierAgent(self.model, verifier_registry, context_runtime=context_runtime(), observer=observe)
+        finalizations = FinalizationLedger(self.checkpoints.root / "finalizations")
+        verifier = VerifierAgent(self.model, verifier_registry, context_runtime=context_runtime(), observer=observe, finalizations=finalizations)
         gate = VerificationGate(
             research_verifier=verifier,
             code_verifier=verifier,
         )
         return MultiAgentWorkflow(
-            supervisor=PlanningSupervisorAgent(self.model, context_runtime=context_runtime(), observer=observe),
-            research_agent=LazyResearchAgent(self.model, self.env_file, context_runtime=context_runtime()),
+            supervisor=PlanningSupervisorAgent(self.model, context_runtime=context_runtime(), observer=observe, finalizations=finalizations),
+            research_agent=LazyResearchAgent(self.model, self.env_file, context_runtime=context_runtime(), finalizations=finalizations),
             code_agent=code_agent,
             verification_gate=gate,
             workspace_id=workspace_id,

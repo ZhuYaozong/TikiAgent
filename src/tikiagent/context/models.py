@@ -84,6 +84,7 @@ class WorkingMemory(ContextModel):
     relevant_history: list[HistoryRecord] = Field(default_factory=list)
     relevant_notepad: list[NotepadEntry] = Field(default_factory=list)
     protected_refs: list[str] = Field(default_factory=list)
+    control_facts: list[dict[str, Any]] = Field(default_factory=list)
     task_id: str = ""
     session_id: str = ""
     history_summary_refs: list[str] = Field(default_factory=list)
@@ -132,6 +133,7 @@ class BaseContext(ContextModel):
                 f"历史摘要：{memory.history_summary or 'null'}",
                 "历史摘要原文引用：" + json.dumps(memory.history_summary_refs, ensure_ascii=False),
                 "相关历史：" + json.dumps(history, ensure_ascii=False),
+                "准确控制事实（摘要不得覆盖）：" + json.dumps(memory.control_facts, ensure_ascii=False),
                 "当前准确 Task Board（摘要不得覆盖）：" + json.dumps(todos, ensure_ascii=False),
             ]
         )

@@ -48,7 +48,7 @@ class TuiEventAdapter:
         """Outcome 是显示输入；status/resume 仍由 Controller 读取权威 Checkpoint。"""
 
         terminal = outcome.status in {
-            "chat_completed", "workflow_completed", "workflow_denied", "workflow_failed"
+            "chat_completed", "chat_failed", "workflow_completed", "workflow_denied", "workflow_failed"
         }
         paused = outcome.status in {
             "awaiting_approval", "recovery_required", "awaiting_reconcile"
@@ -149,10 +149,13 @@ class TuiEventAdapter:
             return {"status": "running", "busy": True}
         if kind == "workflow_denied":
             return {"status": "workflow_denied", "busy": False, "current_agent": "-"}
+        if kind == "workflow_failed":
+            return {"status": "workflow_failed", "busy": False, "current_agent": "-"}
         if kind == "workflow_completed":
             return {"status": "workflow_completed", "busy": False, "current_agent": "-"}
         if kind == "final_answer":
-            return {"status": "completed", "busy": False, "current_agent": "-", "final_answer": event.message}
+            return {"status": event.data.get("status", "completed"), "busy": False,
+                    "current_agent": "-", "final_answer": event.message}
         return {}
 
     @staticmethod

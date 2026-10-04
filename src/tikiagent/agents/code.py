@@ -127,10 +127,13 @@ class MultiAgentCodeAgent:
         return CodeResult(
             handoff_id=handoff.handoff_id,
             summary=run_result.final_text,
-            completed=True,
+            completed=run_result.delivery_status == "ready" if run_result.stop_reason else True,
             steps=run_result.steps,
             changed_files=changed_files,
             tests_run=tests_run,
             context_refs_used=handoff.context_refs,
             tool_results=tool_results,
+            stop_reason=run_result.stop_reason,
+            delivery_status=run_result.delivery_status,
+            finalization_status=run_result.finalization_status,
         )
