@@ -145,7 +145,15 @@ class MultiAgentWorkflow:
     def _supervisor_node(self, state: TikiState) -> dict[str, Any]:
         updates: dict[str, Any] = {}
         decision_state = state
-        if state["supervisor_plan"] is None:
+        tool_loop = getattr(self.supervisor, "supports_tool_loop", False)
+        if tool_loop:
+            decision, updates = self.supervisor.advance(
+                state, history_store=self.history_store, context_builder=self.context_builder,
+                finish_guard=self._finish_guard_failures,
+                available_agents={name for name, agent in (("research_agent", self.research_agent), ("code_agent", self.code_agent)) if agent is not None},
+            )
+            decision_state = cast(TikiState, {**state, **updates})
+        elif state["supervisor_plan"] is None:
             plan = self.supervisor.plan(state["task"])
             task_board = create_task_board(
                 task=state["task"],
@@ -161,14 +169,13 @@ class MultiAgentWorkflow:
             }
             decision_state = cast(TikiState, {**state, **updates})
 
-        base_context = self._build_context(
-            state=decision_state,
-            agent="supervisor",
-            phase="routing",
-            instruction="查看当前任务进度并决定下一条控制边。",
-            context_refs=self._supervisor_context_refs(decision_state),
-        )
-        decision = self.supervisor.decide(decision_state, base_context)
+        if not tool_loop:
+            base_context = self._build_context(
+                state=decision_state, agent="supervisor", phase="routing",
+                instruction="查看当前任务进度并决定下一条控制边。",
+                context_refs=self._supervisor_context_refs(decision_state),
+            )
+            decision = self.supervisor.decide(decision_state, base_context)
         # 即便注入的 Supervisor 忽略预算，Graph 也不继续派发有风险的循环。
         if decision.action == "delegate" and (
             state["delegation_count"] >= state["max_delegations"]
@@ -226,9 +233,12 @@ class MultiAgentWorkflow:
         if target is None:
             raise RuntimeError("delegate 决策缺少 target_agent")
         self._require_agent_available(target)
-        todo = next_actionable_todo(decision_state["task_board"], target)
+        todo = (decision_state["task_board"].items.get(decision.todo_id) if decision.todo_id
+                else next_actionable_todo(decision_state["task_board"], target))
         if todo is None:
             raise RuntimeError(f"{target} 没有可执行 Todo")
+        if todo.owner != target:
+            raise RuntimeError("委派目标与 Todo owner 不匹配")
 
         handoff = Handoff(
             from_agent="supervisor",
@@ -249,6 +259,12 @@ class MultiAgentWorkflow:
             todo_id=todo.todo_id,
             handoff_id=handoff.handoff_id,
         )
+        if tool_loop:
+            runtime = updates["supervisor_runtime"]
+            pending = runtime.get("pending")
+            if pending is None or pending["todo_id"] != todo.todo_id:
+                raise RuntimeError("Supervisor 委派缺少匹配 Pending ToolCall")
+            pending["handoff_id"] = handoff.handoff_id
         self._write_history(
             decision_state,
             record_id=handoff.handoff_id,
@@ -326,6 +342,7 @@ class MultiAgentWorkflow:
             "specialist_results": {
                 "research_agent": result.model_dump(mode="json")
             },
+            "results_by_id": {**state.get("results_by_id", {}), result.result_id: result.model_dump(mode="json")},
             "status": "validating",
             "recent_events": ["research_agent: result"],
         }
@@ -416,6 +433,7 @@ class MultiAgentWorkflow:
             "specialist_results": {
                 "code_agent": result.model_dump(mode="json")
             },
+            "results_by_id": {**state.get("results_by_id", {}), result.result_id: history_payload},
             "trace_cursor": self._runtime_trace_cursor(),
             "status": "validating",
             "recent_events": ["code_agent: result"],
@@ -523,6 +541,15 @@ class MultiAgentWorkflow:
             "raw_result": raw_result,
             "specialist_results": state["specialist_results"],
         }
+        if (getattr(self.verification_gate, "supports_related_results", False)
+                and getattr(self.supervisor, "supports_tool_loop", False)):
+            # 多 Todo 下来源属于本次委派，不能误用同一 Agent 后来的另一份结果。
+            verification_arguments["research_results"] = [
+                record.payload for ref in handoff.context_refs
+                if (record := self.history_store.get_by_id(ref)) is not None
+                and record.record_type == "result" and record.producer == "research_agent"
+                and record.session_id == state["session_id"]
+            ]
         if getattr(self.verification_gate, "supports_harness", False):
             verification_arguments["execution_context"] = ExecutionContext(
                 scope=ExecutionScope(
@@ -534,6 +561,9 @@ class MultiAgentWorkflow:
                 exposed_tools=set(),
             )
         report = self.verification_gate.verify(**verification_arguments)
+        if (report.result_id != raw_result.get("result_id") or report.handoff_id != handoff.handoff_id
+                or report.subject_agent != handoff.to_agent):
+            raise RuntimeError("VerificationReport 与当前 Result/Handoff 身份不匹配")
         result_id = raw_result.get("result_id")
         if not isinstance(result_id, str):
             raise RuntimeError("Specialist Result 缺少 result_id")
@@ -561,6 +591,12 @@ class MultiAgentWorkflow:
             "current_agent": "supervisor",
             "verification_report": report,
             "specialist_verifications": {handoff.to_agent: report},
+            "verifications_by_id": {**state.get("verifications_by_id", {}), report.verification_id: report.model_dump(mode="json")},
+            "supervisor_runtime": (
+                self.supervisor.complete_delegation(state, handoff, raw_result, report)
+                if getattr(self.supervisor, "supports_tool_loop", False)
+                else state.get("supervisor_runtime", {})
+            ),
             "task_board": task_board,
             "history_cursor": self.history_store.cursor(),
             "status": "running",
@@ -594,9 +630,13 @@ class MultiAgentWorkflow:
             final_result=state["final_result"],
             refs=refs,
         )
+        # 已完成任务只保留统计和真实结果；私有消息与摘要缓存属于临时运行内存。
+        runtime = dict(state.get("supervisor_runtime", {}))
+        runtime.update(local_memory={}, history_summary_cache={}, pending=None)
         return {
             "current_agent": "supervisor",
             "status": "completed",
+            "supervisor_runtime": runtime,
             "finalization_report": report,
             "history_cursor": self.history_store.cursor(),
             "recent_events": [
@@ -783,6 +823,22 @@ class MultiAgentWorkflow:
     def _finish_guard_failures(
         state: TikiState,
     ) -> tuple[list[SpecialistName], list[str]]:
+        if state.get("results_by_id"):
+            # 每个 Todo 校验自己的最新身份，不能用同一 Agent 后来的 PASS 覆盖前一项。
+            incomplete = []
+            unverified_owners = set()
+            for item in state["task_board"].items.values():
+                result = state["results_by_id"].get(item.result_id, {})
+                report = state.get("verifications_by_id", {}).get(item.verification_id, {})
+                if (item.status != "completed" or not report.get("passed")
+                        or result.get("handoff_id") != item.handoff_id
+                        or result.get("result_id") != item.result_id
+                        or report.get("result_id") != item.result_id
+                        or report.get("handoff_id") != item.handoff_id
+                        or report.get("subject_agent") != item.owner):
+                    incomplete.append(item.todo_id)
+                    unverified_owners.add(item.owner)
+            return sorted(unverified_owners), incomplete
         unverified = [
             specialist
             for specialist in state["required_specialists"]

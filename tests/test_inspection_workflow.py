@@ -1,6 +1,7 @@
 """复现只读调查被强制创建报告的问题，验证任务模式与证据边界。"""
 
 from pathlib import Path
+import json
 
 import pytest
 
@@ -13,6 +14,20 @@ from test_artifact_aware_verifier import build_verifier, code_result, handoff
 class InspectionModel:
     def __init__(self) -> None:
         self.requests = []
+        self.supervisor_steps = 0
+
+    def supervisor_response(self, messages):
+        self.supervisor_steps += 1
+        if self.supervisor_steps == 1:
+            name, args = "update_plan", {"goal": "查询文件", "acceptance_criteria": ["读取文件作为证据"],
+                "todos": [{"todo_id": "inspect", "description": "查询 index.html", "owner": "code_agent", "delivery_mode": "inspection"}]}
+        elif self.supervisor_steps == 2:
+            name, args = "delegate_task", {"todo_id": "inspect", "instruction": "读取 index.html 并回答", "reason": "获取文件证据"}
+        elif "repeated_tool_failure" in str(messages):
+            name, args = "stop_task", {"reason": "CodeAgent repeated_tool_failure，停止重试"}
+        else:
+            name, args = "finish_task", {"reason": "证据通过验证"}
+        return ModelResponse(assistant_message={"role": "assistant"}, tool_calls=(ModelToolCall(f"sup-{self.supervisor_steps}", name, json.dumps(args)),))
 
     def complete_structured(self, messages, response_type):
         if response_type is SupervisorPlan:
@@ -28,6 +43,8 @@ class InspectionModel:
         )
 
     def complete(self, *, messages, tool_schemas):
+        if any(s["name"] == "update_plan" for s in tool_schemas):
+            return self.supervisor_response(messages)
         self.requests.append((messages, tool_schemas))
         if len(self.requests) == 1:
             return ModelResponse(
@@ -73,6 +90,8 @@ def test_loop_stop_reaches_application_final_answer_and_keeps_error_evidence(tmp
             return super().complete_structured(messages=messages, response_type=response_type)
 
         def complete(self, *, messages, tool_schemas):
+            if any(s["name"] == "update_plan" for s in tool_schemas):
+                return self.supervisor_response(messages)
             self.requests.append((messages, tool_schemas))
             return ModelResponse(assistant_message={"role": "assistant"}, tool_calls=(
                 ModelToolCall(f"missing-{len(self.requests)}", "read_file", '{"path":"missing.txt"}'),

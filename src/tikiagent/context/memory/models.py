@@ -93,3 +93,6 @@ class LocalMemory(ContextModel):
 
     summary: str | None = None
     recent_interactions: list[ReActInteraction] = Field(default_factory=list)
+    # 来源身份随 Checkpoint 保存；摘要不是新的执行事实。
+    summary_refs: list[str] = Field(default_factory=list)
+    execution_facts: list[dict[str, Any]] = Field(default_factory=list)

@@ -23,9 +23,9 @@ TikiAgent 使用 Supervisor 动态规划和委派任务，由 ResearchAgent 与 
 
 | 能力 | 说明 |
 |---|---|
-| Multi-Agent orchestration | Supervisor 根据任务路由 ResearchAgent、CodeAgent，并在失败后重新规划 |
+| Multi-Agent orchestration | 工具型 Supervisor 创建带依赖的多 Todo 计划，自主检索、委派、调整或停止 |
 | Verification loop | Research 使用来源规则验证，Code 使用只读环境与产物验证 |
-| Context engineering | History、Retriever、Task Board、Context Profiles、Compression 与 Notepad |
+| Context engineering | 稳定提示词前置，History／Local 两层 LLM 摘要，近期完整交互与 token 预算保护 |
 | Execution harness | Tool Exposure、Permission、Approval、Workspace、Timeout、Checkpoint 与 Trace |
 | Recovery semantics | Approval 暂停、Checkpoint Resume、未知副作用 Recovery/Reconcile |
 | OpenAI-compatible backend | 可连接 DeepSeek 官方 API 或本地 vLLM OpenAI-compatible endpoint |
@@ -103,6 +103,8 @@ TIKI_LLM_BASE_URL=https://api.deepseek.com
 TIKI_LLM_MODEL=deepseek-chat
 TIKI_LLM_TIMEOUT_SECONDS=60
 TIKI_LLM_MAX_RETRIES=1
+TIKI_LLM_CONTEXT_LIMIT=32000
+TIKI_LLM_MAX_OUTPUT_TOKENS=2000
 
 TIKI_SEARCH_PROVIDER=tavily
 TIKI_TAVILY_API_KEY=tvly-your-key
@@ -112,6 +114,10 @@ TIKI_TAVILY_BASE_URL=https://api.tavily.com
 `.env` 已被 Git 忽略。不要把真实 API Key 写入 README、示例代码或提交记录。
 
 模型请求默认超时为 60 秒、最多重试 1 次，可用以上两个可选配置调整。模型服务的 `insufficient_quota` 错误需要在服务控制台处理额度；修改项目步数不会解决配额不足。
+
+`TIKI_LLM_CONTEXT_LIMIT` 和 `TIKI_LLM_MAX_OUTPUT_TOKENS` 分别配置模型总窗口和输出预留；请按实际后端能力设置。上下文接近预算时会额外调用模型总结旧历史或旧交互，原始任务约束与 TaskBoard 不参与摘要。摘要失败不会覆盖旧消息，仍超限时明确停止。
+
+Supervisor 通过 `update_plan`、`read_history`、`delegate_task`、`finish_task`、`stop_task` 编排任务，实际执行仍由 Graph、Specialist 和 Verification Gate 完成。每个 Todo 独立关联结果和验证，审批恢复会继续原来的待完成委派。详见 [Supervisor 与上下文设计](docs/supervisor-context.md)。
 
 ### Start the TUI
 
@@ -187,8 +193,9 @@ CLI 还提供 `resume`、`recover` 和 `reconcile`。这些入口读取 Session 
 
 ```text
 Raw ToolCall
-    ↓ validate + canonicalize
+    ↓ basic validation
 Tool Exposure Guard
+    ↓ argument validation + canonicalization
     ↓
 Permission: ALLOW / ASK / DENY
     ↓

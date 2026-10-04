@@ -52,6 +52,7 @@ ApplicationEventType = Literal[
     "recovery_decided",
     "reconciliation_completed",
     "final_answer",
+    "context_prepared",
 ]
 
 

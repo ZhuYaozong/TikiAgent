@@ -24,7 +24,7 @@ from tikiagent.tools.registry import ToolRegistry
 
 
 class SupervisorAgent:
-    """模型负责语义规划，程序负责不可绕过的控制流契约。"""
+    """旧结构化规划基线；正式应用使用 PlanningSupervisorAgent。"""
 
     def __init__(
         self,

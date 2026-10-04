@@ -8,7 +8,7 @@ TikiAgent 按运行职责组织源码，而不是按开发阶段累积模块。�
 |---|---|
 | 用户输入如何启动任务 | `interfaces/cli.py`、`interfaces/tui/app.py` |
 | 应用如何装配、保存会话和调用工作流 | `application/bootstrap.py`、`controller.py`、`workflow_adapter.py` |
-| 谁决定委派、重试和结束 | `agents/supervisor.py` |
+| 谁决定委派、重试和结束 | `agents/planning.py`（正式工具型 Agent）；`agents/supervisor.py`（结构化基线） |
 | 多 Agent 如何流转 | `orchestration/workflow.py`、`state.py`、`contracts.py` |
 | Research / Code 如何完成一次委派 | `agents/research.py`、`agents/code.py` |
 | 单 Agent 如何调用工具、暂停和恢复 | `runtime/react.py`、`resumable.py`、`models.py` |
@@ -24,6 +24,7 @@ TikiAgent 按运行职责组织源码，而不是按开发阶段累积模块。�
 src/tikiagent/
 ├── agents/                 # 角色策略，而非通用循环或验证工具箱
 │   ├── supervisor.py
+│   ├── planning.py          # 正式 Supervisor 的编排工具与私有循环
 │   ├── research.py
 │   └── code.py
 ├── runtime/                # 单 Agent 执行生命周期
@@ -56,7 +57,7 @@ src/tikiagent/
 │   ├── models.py           # Context、任务视图与调用结构
 │   ├── schema.py           # 共享校验基类
 │   ├── memory/             # history、retriever、notepad、local、models
-│   └── compression/        # monitor、compressors、policy、models
+│   └── compression/        # monitor、compressors、llm、policy、models
 ├── tools/                  # models、registry、dispatcher、files、commands、web
 ├── harness/
 │   ├── execution.py        # Exposure → Prepare → Permission / Approval → Execute

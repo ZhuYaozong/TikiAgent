@@ -58,6 +58,7 @@ class ContextRuntime:
         base_compressor: BaseCompressor | None = None,
         local_compressor: LocalCompressor | None = None,
         compression_policy: CompressionPolicy | None = None,
+        observer=None,
     ) -> None:
         self.budget = budget or ContextBudget()
         self.prompt_assembler = PromptAssembler(profiles)
@@ -67,6 +68,7 @@ class ContextRuntime:
         self.base_compressor = base_compressor or RuleBasedBaseCompressor()
         self.local_compressor = local_compressor or RuleBasedLocalCompressor()
         self.compression_policy = compression_policy or CompressionPolicy()
+        self.observer = observer
 
     def prepare(
         self,
@@ -77,6 +79,9 @@ class ContextRuntime:
         response_type: type[ResponseModel] | None = None,
     ) -> PreparedModelCall:
         phase = base_context.working_memory.phase
+        engines = {id(e): e for e in (getattr(self.base_compressor, "engine", None), getattr(self.local_compressor, "engine", None)) if e is not None}
+        for engine in engines.values():
+            engine.calls = max(engine.calls, base_context.working_memory.compression_calls)
         prompt = self.prompt_assembler.assemble(base_context.agent, phase)
         tool_view = self.tool_selector.select(
             agent=base_context.agent,
@@ -96,6 +101,7 @@ class ContextRuntime:
         actions: list[Literal["base", "local"]] = []
         notepad_candidates = []
         usage = self.monitor.measure(candidate, self.budget)
+        before_usage = usage
 
         if self.compression_policy.should_compress_base(usage):
             result = self.base_compressor.compress(candidate.base_context)
@@ -112,9 +118,24 @@ class ContextRuntime:
                 usage = self.monitor.measure(candidate, self.budget)
 
         if self.compression_policy.should_compress_local(usage):
+            # 按完整交互缩小近期窗口；至少留下最近一组，过大则明确报错。
+            interactions = candidate.local_memory.recent_interactions
+            keep = min(self.budget.recent_interaction_limit, len(interactions))
+            while keep > 1 and self.monitor.estimator.estimate([
+                item.model_dump(mode="json") for item in interactions[-keep:]
+            ]) > self.budget.recent_tokens_budget:
+                keep -= 1
             result = self.local_compressor.compress(
                 candidate.local_memory,
-                recent_interaction_limit=self.budget.recent_interaction_limit,
+                recent_interaction_limit=max(1, keep),
+                task=(candidate.base_context.working_memory.task + "\n"
+                      + candidate.base_context.working_memory.instruction),
+                scope="/".join([
+                    candidate.base_context.working_memory.session_id,
+                    candidate.base_context.working_memory.task_id,
+                    candidate.base_context.agent,
+                    *candidate.base_context.working_memory.protected_refs,
+                ]),
             )
             if result.changed:
                 actions.append("local")
@@ -127,6 +148,22 @@ class ContextRuntime:
                 )
                 usage = self.monitor.measure(candidate, self.budget)
 
+        if engines:
+            updated_memory = candidate.base_context.working_memory.model_copy(update={"compression_calls": max(e.calls for e in engines.values())})
+            candidate = candidate.model_copy(update={"base_context": candidate.base_context.model_copy(update={"working_memory": updated_memory})})
+        if self.observer:
+            details = {"agent": base_context.agent, "before": before_usage.model_dump(),
+                       "after": usage.model_dump(), "actions": actions}
+            events = []
+            seen = set()
+            for compressor in (self.base_compressor, self.local_compressor):
+                engine = getattr(compressor, "engine", None)
+                if engine is not None and id(engine) not in seen:
+                    seen.add(id(engine))
+                    events.extend(engine.events)
+                    engine.events.clear()
+            details["compression_events"] = events
+            self.observer(base_context, details)
         if usage.total_over_budget:
             raise ContextBudgetExceeded(candidate, usage)
 

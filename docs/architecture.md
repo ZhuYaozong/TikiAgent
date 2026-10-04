@@ -46,6 +46,8 @@ Supervisor FINISH
 
 ## Context Plane
 
+正式 Supervisor 现在具备自己的编排工具循环和 LocalMemory。计划、委派及两层 LLM 摘要的具体边界见 [Supervisor 与上下文](supervisor-context.md)。Graph 负责执行和验证，FINISH 逐 Todo 校验准确的结果身份。
+
 `TikiState` 保存当前 Workflow 的结构化运行事实，不保存完整历史。完整可复用信息进入 History，长期关键事实进入 Notepad，Task Board 独立跟踪多个 Todo。
 
 ```text
@@ -72,8 +74,9 @@ Prompt / Tool Schemas / Local ReAct Messages
 
 ```text
 ToolCall
-  ↓ validate / canonicalize
+  ↓ basic validation
 Tool Exposure Guard
+  ↓ argument validation / canonicalize
   ↓
 Permission: ALLOW / ASK / DENY
   ↓ ASK 时绑定 task / session / workspace / fingerprint

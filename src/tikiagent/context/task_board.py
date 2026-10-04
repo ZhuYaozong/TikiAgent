@@ -39,6 +39,7 @@ def add_todo(
     owner: ContextAgentName,
     todo_id: str | None = None,
     delivery_mode: Literal["artifact", "inspection"] = "artifact",
+    depends_on: list[str] | None = None,
 ) -> TaskBoard:
     """添加工作项；同一个 owner 可以拥有多个 Todo。"""
 
@@ -47,6 +48,7 @@ def add_todo(
         description=description,
         owner=owner,
         delivery_mode=delivery_mode,
+        depends_on=depends_on or [],
     )
     if item.todo_id in board.items:
         raise ValueError(f"Todo 已存在：{item.todo_id}")
@@ -104,6 +106,8 @@ def start_todo(
         raise TaskBoardTransitionError(
             f"Todo {todo_id} 不能从 {item.status} 开始执行"
         )
+    if any(board.items[dependency].status != "completed" for dependency in item.depends_on):
+        raise TaskBoardTransitionError("依赖 Todo 尚未完成")
     return _replace(
         board,
         item.model_copy(

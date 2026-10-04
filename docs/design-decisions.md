@@ -157,6 +157,8 @@ SupervisorPlan 的 `code_task_mode` 区分 `artifact` 与 `inspection`，模式�
 
 ## 有限执行与恢复预算
 
+正式 Supervisor 使用编排工具循环，历史基线仍保留结构化决策方式。状态中新增 Supervisor 私有消息、待完成委派和按结果身份索引；原始验收要求与真实 Todo 状态不由模型任意覆盖。History/Local 压缩使用有界 LLM 摘要，失败保留原输入，不把历史摘要放入 system。详细取舍和恢复边界见 [Supervisor 与上下文](supervisor-context.md)。
+
 正式 ReAct Runtime 分别限制模型步骤和实际工具次数。`loop_guard` 保存在 ReActRunSnapshot，记录次数与参数指纹对应的失败计数；拒绝、无效参数、命令非零退出和超时均占用预算。相同参数的成功结果会清除该参数的失败计数。每次执行默认最多 24 个工具结果，任务累计最多 60 个；Supervisor 负责结束判断，Graph 对继续委派另做强制预算检查。
 
 ASK 在收到真实 ToolResult 前不计完成调用；Resume 从同一 Checkpoint 恢复已完成消耗，审批执行完成后计入一次，不重复执行。旧 ReAct Snapshot 缺少 `loop_guard` 时，至少从已保存 ToolResult 恢复调用数。旧 State 补入任务计数 0、上限 60；历史快照中未记录的早期委派消耗不靠 Trace 推断。旧计划和 Handoff 默认 `artifact`，不擅自改变冻结的任务要求；需要新只读验收时重新提交任务。

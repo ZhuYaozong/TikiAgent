@@ -18,6 +18,21 @@ def compose_final_answer(state: TikiState) -> str:
     """只展示最新且具有匹配 PASS 的结果，不把内部身份 ID 暴露给用户。"""
 
     sections: list[str] = ["# 任务完成"]
+    todos = list(state["task_board"].items.values())
+    if state.get("results_by_id") and len(todos) > len({t.owner for t in todos}):
+        # 多 Todo 逐项展示，不能只返回每个 Agent 最后一次交付。
+        share = max(200, 6800 // max(1, len(todos)))
+        for todo in todos:
+            raw = state["results_by_id"].get(todo.result_id, {})
+            report = state.get("verifications_by_id", {}).get(todo.verification_id, {})
+            if (todo.status != "completed" or not report.get("passed")
+                    or report.get("result_id") != todo.result_id or report.get("handoff_id") != todo.handoff_id
+                    or report.get("subject_agent") != todo.owner or raw.get("handoff_id") != todo.handoff_id):
+                raise ValueError("Todo 缺少匹配的已验证结果")
+            result = ResearchResult.model_validate(raw) if todo.owner == "research_agent" else CodeResult.model_validate(raw)
+            content = _research_sections(result) if isinstance(result, ResearchResult) else _code_sections(result)
+            sections.append(_bound_markdown("\n\n".join([f"## {todo.description}", *content]), share))
+        return _bound_markdown("\n\n".join(sections), MAX_FINAL_ANSWER_CHARS)
     research = _verified_result(state, "research_agent", ResearchResult)
     code = _verified_result(state, "code_agent", CodeResult)
     if research is not None:

@@ -30,6 +30,8 @@ class LocalCompressor(Protocol):
         memory: LocalMemory,
         *,
         recent_interaction_limit: int,
+        task: str = "",
+        scope: str = "",
     ) -> LocalCompressionResult: ...
 
 
@@ -107,7 +109,11 @@ class RuleBasedLocalCompressor:
         memory: LocalMemory,
         *,
         recent_interaction_limit: int,
+        task: str = "",
+        scope: str = "",
     ) -> LocalCompressionResult:
+        import json
+
         interactions = memory.recent_interactions
         if len(interactions) <= recent_interaction_limit:
             return LocalCompressionResult(memory=memory, changed=False)
@@ -125,7 +131,20 @@ class RuleBasedLocalCompressor:
             statuses = []
             for message in interaction.tool_messages:
                 content = str(message.get("content", ""))
-                statuses.append("failed" if '"ok":false' in content else "observed")
+                try:
+                    value = json.loads(content)
+                except (ValueError, TypeError):
+                    value = {}
+                if not isinstance(value, dict):
+                    value = {}
+                output = value.get("output")
+                output = output if isinstance(output, dict) else {}
+                statuses.append(json.dumps({
+                    "ok": value.get("ok"), "error": value.get("error"),
+                    "exit_code": output.get("exit_code"),
+                    "timed_out": output.get("timed_out"),
+                    "path": output.get("path"),
+                }, ensure_ascii=False))
             facts.append(
                 f"{interaction.interaction_id}:"
                 f"{','.join(tool_names)}:{','.join(statuses)}"
@@ -136,5 +155,9 @@ class RuleBasedLocalCompressor:
         compressed = LocalMemory(
             summary=summary[-2000:],
             recent_interactions=retained,
+            summary_refs=list(dict.fromkeys([
+                *memory.summary_refs, *[item.interaction_id for item in removed],
+            ])),
+            execution_facts=memory.execution_facts,
         )
         return LocalCompressionResult(memory=compressed, changed=True)

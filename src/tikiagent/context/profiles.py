@@ -14,10 +14,17 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
             "需要当前外部信息时先 research_agent 后 code_agent",
         ],
         phase_rules={
+            "orchestration": [
+                "先用 update_plan 创建具体 Todo 与依赖；始终保留原始任务和验收要求",
+                "根据结果与失败原因决定调整、重试或停止，不重复委派不可恢复的失败",
+                "delegate_task、finish_task、stop_task 每次只能单独调用",
+                "完成必须请求 finish_task，阻塞必须请求 stop_task；不能用普通文本宣称完成",
+            ],
             "planning": ["生成可验证的验收标准，不调用工具"],
             "routing": ["只生成下一次委派，不执行 Specialist 工作"],
             "completed": ["只总结已经通过验证的最终事实"],
         },
+        tool_names_by_phase={"orchestration": {"read_history", "update_plan", "delegate_task", "finish_task", "stop_task"}},
         allowed_record_types={
             "handoff",
             "result",
