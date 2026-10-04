@@ -65,6 +65,7 @@ class TuiEventAdapter:
                 "checkpoint_id": outcome.checkpoint_id,
                 "checkpoint_revision": outcome.checkpoint_revision,
                 "approval_request_id": outcome.approval_request_id,
+                "approval_details": outcome.approval_details,
                 "execution_id": outcome.execution_id,
                 "attempt": outcome.attempt,
                 "tool_call_id": outcome.tool_call_id,
@@ -130,6 +131,7 @@ class TuiEventAdapter:
                 "approvals": state.approvals + 1,
                 "checkpoint_revision": _optional_int(data.get("revision")),
                 "approval_request_id": _optional_str(data.get("approval_request_id")),
+                "approval_details": None,
                 "execution_id": _optional_str(data.get("execution_id")),
                 "attempt": _optional_int(data.get("attempt")),
             }

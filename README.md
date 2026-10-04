@@ -139,6 +139,8 @@ uv run --locked tikiagent-tui --data-dir .tiki --env-file .env
 
 TUI 支持多轮 Session、Markdown 最终回答、实时 Agent/Tool/Verification Feed、Approval、Recovery 和只读 Workspace Tree。详细命令见 [Textual TUI](docs/tui.md)。
 
+需要人工审批时，弹窗显示本次工具的具体参数、工作目录、超时和审批原因。长参数可滚动查看，敏感值会遮蔽；批准仅针对当前一次执行。重新连接 Session 后，审批详情从权威 Checkpoint 重新读取。
+
 ## Demo Validation
 
 项目冻结了三个可重复的产品场景：

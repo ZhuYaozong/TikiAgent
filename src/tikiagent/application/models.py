@@ -137,6 +137,20 @@ class ApplicationEvent(ApplicationModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+class ApprovalDetails(ApplicationModel):
+    """从权威审批请求生成的脱敏显示投影，不用于授予执行权限。"""
+
+    request_id: str = Field(min_length=1)
+    tool_call_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    workspace_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    rule_id: str = Field(min_length=1)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class ApplicationOutcome(ApplicationModel):
     """ApplicationController 返回给 CLI/API 的稳定结果。"""
 
@@ -149,6 +163,7 @@ class ApplicationOutcome(ApplicationModel):
     checkpoint_id: str | None = None
     checkpoint_revision: int | None = Field(default=None, ge=1)
     approval_request_id: str | None = None
+    approval_details: ApprovalDetails | None = None
     execution_id: str | None = None
     attempt: int | None = Field(default=None, ge=1)
     tool_call_id: str | None = None
@@ -169,6 +184,7 @@ class WorkflowOutcome(ApplicationModel):
     checkpoint_id: str | None = None
     checkpoint_revision: int | None = Field(default=None, ge=1)
     approval_request_id: str | None = None
+    approval_details: ApprovalDetails | None = None
     approval_fingerprint: str | None = None
     execution_id: str | None = None
     attempt: int | None = Field(default=None, ge=1)

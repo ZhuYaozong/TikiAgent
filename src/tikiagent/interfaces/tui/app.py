@@ -291,6 +291,7 @@ class TikiTuiApp(App[None]):
                 request_id=state.approval_request_id, session_id=state.session_id or "",
                 expected_revision=state.checkpoint_revision, tool_name=state.tool_name,
                 tool_call_id=state.tool_call_id, checkpoint_id=state.checkpoint_id,
+                details=state.approval_details,
             )
             self.action_show_approval()
         elif status == "recovery_required":
@@ -311,6 +312,9 @@ class TikiTuiApp(App[None]):
         if approved is None or self.visible_approval is None or self.operation_in_flight:
             return
         prompt = self.visible_approval
+        if approved and not prompt.can_approve:
+            self._show_error("审批详情缺失或不匹配，请刷新状态后再批准")
+            return
         self.resume_submission_count += 1
         self._start_operation("resume", {
             "session_id": prompt.session_id, "expected_revision": prompt.expected_revision,
