@@ -20,7 +20,8 @@ class InspectionModel:
         self.supervisor_steps += 1
         if self.supervisor_steps == 1:
             name, args = "update_plan", {"goal": "查询文件", "acceptance_criteria": ["读取文件作为证据"],
-                "todos": [{"todo_id": "inspect", "description": "查询 index.html", "owner": "code_agent", "delivery_mode": "inspection"}]}
+                "todos": [{"todo_id": "inspect", "description": "查询 index.html", "owner": "code_agent", "delivery_mode": "inspection",
+                           "required_capabilities": ["workspace_read"], "acceptance_criteria": [{"criterion_id": "file", "description": "读取文件证明位置"}]}]}
         elif self.supervisor_steps == 2:
             name, args = "delegate_task", {"todo_id": "inspect", "instruction": "读取 index.html 并回答", "reason": "获取文件证据"}
         elif "repeated_tool_failure" in str(messages):
@@ -45,6 +46,10 @@ class InspectionModel:
     def complete(self, *, messages, tool_schemas):
         if any(s["name"] == "update_plan" for s in tool_schemas):
             return self.supervisor_response(messages)
+        if any(s["name"] == "submit_verification" for s in tool_schemas):
+            if not any(m.get("tool_call_id") == "evidence" for m in messages):
+                return ModelResponse(assistant_message={"role": "assistant"}, tool_calls=(ModelToolCall("evidence", "read_evidence", '{"evidence_id":"execution:1"}'),))
+            return ModelResponse(assistant_message={"role": "assistant"}, tool_calls=(ModelToolCall("verify", "submit_verification", json.dumps({"assessments": [{"criterion_id": "file", "status": "passed", "evidence_refs": ["execution:1"], "reason": "读取了目标文件"}], "recommendation": "完成"})),))
         self.requests.append((messages, tool_schemas))
         if len(self.requests) == 1:
             return ModelResponse(
@@ -74,7 +79,7 @@ def test_read_only_question_finishes_after_one_delegation_without_new_files(tmp_
     assert "index.html" in state["final_result"]
     assert [file.name for file in workspace.iterdir()] == ["index.html"]
     for _, schemas in model.requests:
-        assert {s["name"] for s in schemas} == {"read_file", "list_files", "grep"}
+        assert {s["name"] for s in schemas} == {"read_file", "list_files", "grep", "inspect_python_environment"}
 
 
 def test_loop_stop_reaches_application_final_answer_and_keeps_error_evidence(tmp_path):

@@ -222,7 +222,8 @@ def test_missing_or_empty_declared_artifact_fails(tmp_path: Path) -> None:
     assert sum("artifact_readable_nonempty" in failure for failure in report.failures) == 2
 
 
-def test_formal_runtime_uses_artifact_aware_verifier(tmp_path: Path) -> None:
+def test_formal_runtime_uses_verifier_agent(tmp_path: Path) -> None:
+    from tikiagent.agents.verifier import VerifierAgent
     factory = ApplicationRuntimeFactory(
         tmp_path / ".tiki",
         env_file=tmp_path / "missing.env",
@@ -232,5 +233,5 @@ def test_formal_runtime_uses_artifact_aware_verifier(tmp_path: Path) -> None:
 
     assert isinstance(
         workflow.verification_gate.verifiers["code_agent"],
-        ArtifactAwareCodeVerifier,
+        VerifierAgent,
     )

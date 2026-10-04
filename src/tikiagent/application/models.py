@@ -53,6 +53,7 @@ ApplicationEventType = Literal[
     "reconciliation_completed",
     "final_answer",
     "context_prepared",
+    "model_response",
 ]
 
 

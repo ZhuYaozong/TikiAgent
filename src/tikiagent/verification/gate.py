@@ -3,6 +3,8 @@
 from typing import Any, Protocol
 
 from tikiagent.harness.scope import ExecutionContext
+from tikiagent.orchestration.requirements import assessments_valid
+from tikiagent.verification.research import ResearchResultVerifier
 from tikiagent.orchestration.contracts import (
     CodeResult,
     Handoff,
@@ -40,6 +42,7 @@ class VerificationGate:
             getattr(verifier, "supports_harness", False)
             for verifier in self.verifiers.values()
         )
+        self.supports_context = any(getattr(v, "supports_context", False) for v in self.verifiers.values())
 
     def verify(
         self,
@@ -49,6 +52,7 @@ class VerificationGate:
         specialist_results: dict[str, dict[str, Any]],
         execution_context: ExecutionContext | None = None,
         research_results: list[dict[str, Any]] | None = None,
+        base_context=None,
     ) -> VerificationReport:
         result_type = (
             ResearchResult
@@ -91,6 +95,10 @@ class VerificationGate:
 
         verifier = self.verifiers[handoff.to_agent]
         related_kwargs = {"research_results": research_results} if getattr(verifier, "supports_related_results", False) else {}
+        if getattr(verifier, "supports_context", False):
+            related_kwargs["base_context"] = base_context
+            if not handoff.acceptance_criteria:
+                return self._identity_failure(handoff, result.result_id, "缺少冻结验收契约，请重新规划；旧快照不能自动通过")
         if getattr(verifier, "supports_harness", False):
             report = verifier.verify(
                 handoff=handoff,
@@ -117,7 +125,9 @@ class VerificationGate:
                 "Verifier 返回了指向其他 Result/Handoff 的报告",
             )
         if not report.passed:
-            category, retryable = "validation", True
+            category, retryable = report.failure_category or "validation", report.retryable
+            if report.failure_category is None:
+                retryable = True
             if isinstance(result, CodeResult) and result.stop_reason:
                 category, retryable = "budget", False
             elif isinstance(result, CodeResult) and result.tool_results:
@@ -125,9 +135,25 @@ class VerificationGate:
                 error = last.get("error") or {}
                 if error.get("code") in {"permission_denied", "approval_rejected", "tool_not_exposed", "workspace_escape"}:
                     category, retryable = "permission", False
-                elif last.get("ok") is False:
+                elif last.get("ok") is False and report.failure_category is None:
                     category, retryable = "unknown", None
-            report = report.model_copy(update={"failure_category": category, "retryable": retryable})
+            report = report.model_copy(update={"failure_category": category, "retryable": retryable,
+                "blocking_reason": report.blocking_reason or "; ".join(report.failures)})
+        if isinstance(result, CodeResult) and (result.stop_reason or not result.completed):
+            reason = result.stop_reason or "CodeAgent 未完成当前委派"
+            last_error = (result.tool_results[-1].get("error") or {}) if result.tool_results else {}
+            category = "permission" if last_error.get("code") in {"permission_denied", "approval_rejected", "tool_not_exposed", "workspace_escape"} else "budget" if result.stop_reason else "validation"
+            report = report.model_copy(update={"passed": False, "failure_category": category,
+                "retryable": category == "validation", "blocking_reason": reason, "failures": [*report.failures, reason]})
+        if report.passed and handoff.acceptance_criteria:
+            if report.todo_id != handoff.todo_id or not assessments_valid(handoff.acceptance_criteria, report.assessments, report.evidence_records):
+                return self._identity_failure(handoff, result.result_id, "验收覆盖、证据引用或 Todo 关联不完整")
+        if report.passed and isinstance(result, ResearchResult):
+            provenance = ResearchResultVerifier().verify(handoff=handoff, result=result, specialist_results={})
+            if not provenance.passed:
+                report = report.model_copy(update={"passed": False, "failure_category": "insufficient_evidence",
+                    "retryable": False, "blocking_reason": "来源不能追溯到真实搜索 Observation",
+                    "failures": provenance.failures})
         return report
 
     @staticmethod

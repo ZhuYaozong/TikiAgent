@@ -12,7 +12,7 @@ handoff_id
 subject_agent
 ```
 
-Supervisor FINISH 只认可每个必要 Specialist 的最新 Result，以及与该 Result 身份完全匹配的 PASS Verification。旧结果的 PASS 不能验证新 Result，Verifier 也不能绕过 Supervisor 直接结束 Workflow。
+Supervisor FINISH 只认可每个 Todo 的最新 Result，以及与该 Result 身份完全匹配、覆盖冻结验收条件的 PASS Verification。旧结果的 PASS 不能验证新 Result，Verifier 也不能绕过 Supervisor 直接结束 Workflow。
 
 ## 两层 Agent Context
 
@@ -151,9 +151,9 @@ Finalization 只清理 ephemeral runtime memory，例如 local summary、recent 
 
 ## 调查与交付分别验收
 
-SupervisorPlan 的 `code_task_mode` 区分 `artifact` 与 `inspection`，模式随 Todo 和 Handoff 固定，Result 不能自行降级验证要求。只读 Profile 仅展示读取、列表和搜索；Verifier 通过自己的 Harness 重新读取成功的文件/目录观察，核对真实环境证据，且拒绝写入、命令执行及虚构观察。文件交付继续使用已有 Artifact 检查。
+正式工具型 Supervisor 的 Todo 使用 `artifact`、`inspection`、`environment` 模式，随 Handoff 固定，Result 不能自行降级验证要求。只读 Profile 展示读取、列表、搜索与环境元数据查询。VerifierAgent 通过独立 Harness 读取证据、按需检查环境与测试，逐项提交报告；Gate 不再根据扩展名强制套用 Artifact 检查。旧 SupervisorPlan 的 `code_task_mode` 和规则验证器保留用于基线兼容。
 
-当前只读验收证明环境观察真实、一致且没有写入，不证明所有自然语言结论都已得到语义验证。至少需要一次成功的 `read_file` 或 `list_files` 观察；仅凭摘要或失败工具结果不能通过。宿主运行位置通过本地 `/paths` 展示，不发送给外部模型。
+当前语义验收由模型完成，不保证结论绝对正确；程序保证必需标准完整覆盖、引用实际读取且可用的证据、结果身份一致。仅凭摘要或失败工具结果不能通过。宿主运行位置通过本地 `/paths` 展示。导入和测试入口可能执行代码，不等价于 OS 沙箱。边界见 [验证契约](verification-agent.md)。
 
 ## 有限执行与恢复预算
 

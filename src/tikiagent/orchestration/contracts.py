@@ -4,6 +4,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
+from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, CriterionAssessment, DeliveryMode
 
 
 class ControlModel(BaseModel):
@@ -59,14 +60,18 @@ class VerificationReport(ControlModel):
     result_id: str | None = None
     handoff_id: str | None = None
     subject_agent: Literal["research_agent", "code_agent"] | None = None
-    mode: Literal["rules", "environment"] = "environment"
+    mode: Literal["rules", "environment", "agent"] = "environment"
     passed: bool
     checks: list[VerificationCheck]
     failures: list[str]
     evidence: list[str]
     recommendation: str
-    failure_category: Literal["permission", "budget", "identity", "validation", "unknown"] | None = None
+    failure_category: Literal["permission", "budget", "identity", "validation", "unknown", "capability_mismatch", "insufficient_evidence", "model_response"] | None = None
     retryable: bool | None = None
+    todo_id: str | None = None
+    assessments: list[CriterionAssessment] = Field(default_factory=list)
+    evidence_records: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    blocking_reason: str | None = None
 
 
 SpecialistName = Literal["research_agent", "code_agent"]
@@ -152,4 +157,6 @@ class Handoff(ControlModel):
     context_refs: list[str] = Field(default_factory=list)
     result_id: str | None = None
     status: Literal["pending", "completed", "failed"] = "pending"
-    delivery_mode: Literal["artifact", "inspection"] = "artifact"
+    delivery_mode: DeliveryMode = "artifact"
+    required_capabilities: list[Capability] = Field(default_factory=list)
+    acceptance_criteria: list[AcceptanceCriterion] = Field(default_factory=list)

@@ -53,14 +53,18 @@ class OpenAICompatibleClient:
         tool_schemas: Sequence[Mapping[str, Any]],
     ) -> ModelResponse:
         self._check_budget(messages, self._convert_tools(tool_schemas))
-        response = self.client.chat.completions.create(
-            model=self.settings.model,
-            messages=list(messages),
-            tools=self._convert_tools(tool_schemas),
-            tool_choice="auto",
-            max_tokens=self.settings.max_output_tokens,
-        )
-        message = response.choices[0].message
+        # 仅重试空响应一次；此处没有执行工具，不会重放已有副作用。
+        for attempt in range(2):
+            response = self.client.chat.completions.create(
+                model=self.settings.model, messages=list(messages),
+                tools=self._convert_tools(tool_schemas), tool_choice="auto",
+                max_tokens=self.settings.max_output_tokens,
+            )
+            if not getattr(response, "choices", None):
+                raise ValueError(f"模型返回非 ChatCompletion 响应：type={type(response).__name__}，缺少 choices")
+            message = response.choices[0].message
+            if message.tool_calls or (message.content and message.content.strip()):
+                break
         model_tool_calls = tuple(
             ModelToolCall(
                 tool_call_id=tool_call.id,
@@ -73,6 +77,8 @@ class OpenAICompatibleClient:
             assistant_message=message.model_dump(exclude_none=True),
             tool_calls=model_tool_calls,
             final_text=message.content,
+            diagnostics={"response_type": type(response).__name__, "finish_reason": getattr(response.choices[0], "finish_reason", None),
+                         "has_text": bool(message.content and message.content.strip()), "has_tool_calls": bool(model_tool_calls), "empty_response_retries": attempt},
         )
 
     def complete_structured(
@@ -93,6 +99,8 @@ class OpenAICompatibleClient:
                 messages=request_messages,
                 max_tokens=self.settings.max_output_tokens,
             )
+            if not getattr(response, "choices", None):
+                raise StructuredOutputError(f"模型返回非 ChatCompletion 响应：type={type(response).__name__}，缺少 choices")
             content = response.choices[0].message.content
             if content is not None:
                 try:

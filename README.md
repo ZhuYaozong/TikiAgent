@@ -24,7 +24,7 @@ TikiAgent 使用 Supervisor 动态规划和委派任务，由 ResearchAgent 与 
 | 能力 | 说明 |
 |---|---|
 | Multi-Agent orchestration | 工具型 Supervisor 创建带依赖的多 Todo 计划，自主检索、委派、调整或停止 |
-| Verification loop | Research 使用来源规则验证，Code 使用只读环境与产物验证 |
+| Verification loop | VerifierAgent 按 Todo 验收契约独立取证；Verification Gate 强制身份、证据与验收覆盖 |
 | Context engineering | 稳定提示词前置，History／Local 两层 LLM 摘要，近期完整交互与 token 预算保护 |
 | Execution harness | Tool Exposure、Permission、Approval、Workspace、Timeout、Checkpoint 与 Trace |
 | Recovery semantics | Approval 暂停、Checkpoint Resume、未知副作用 Recovery/Reconcile |
@@ -49,7 +49,7 @@ TikiAgent 使用 Supervisor 动态规划和委派任务，由 ResearchAgent 与 
                 ResearchAgent       CodeAgent
                         ╲               ╱
                          ▼             ▼
-                       Verification Gate
+                  VerifierAgent + Verification Gate
                                 │
                                 ▼
                            Supervisor
@@ -76,6 +76,14 @@ Supervisor FINISH / RETRY / DELEGATE
 ```
 
 完整设计见 [Architecture](docs/architecture.md) 和 [Design Decisions](docs/design-decisions.md)。
+
+### Verification & Capabilities
+
+ResearchAgent 仅使用 Tavily 搜索与提取网页；本地文件、Python 环境和依赖任务交给 CodeAgent。Supervisor 为每个 Todo 声明所需能力和逐项验收条件，委派后不能通过删除标准绕过失败。
+
+VerifierAgent 使用独立上下文和受控工具读取证据，逐项返回通过、失败或证据不足。Verification Gate 保留硬约束：最新 `result_id/handoff_id/todo_id` 绑定、来源可追溯、验收完整覆盖、有据可查；模型不能直接指定整个任务通过。只有 Supervisor 可以决定结束。
+
+Python 环境任务可查询实际解释器与发行包版本、检查导入；安装仍必须走原来的审批/Checkpoint 链。已经满足要求的依赖不需要重复安装或创建无关测试。验证工具的隔离子进程、临时测试副本**不是强沙箱**，请只运行可信代码。详见 [验证契约与边界](docs/verification-agent.md)。
 
 ## Quick Start
 

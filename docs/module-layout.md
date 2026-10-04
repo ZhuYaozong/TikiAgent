@@ -13,6 +13,8 @@ TikiAgent 按运行职责组织源码，而不是按开发阶段累积模块。�
 | Research / Code 如何完成一次委派 | `agents/research.py`、`agents/code.py` |
 | 单 Agent 如何调用工具、暂停和恢复 | `runtime/react.py`、`resumable.py`、`models.py` |
 | 最新 Result 是否已通过验证 | `verification/gate.py`、`orchestration/guards.py` |
+| 逐项取证与冻结验收契约 | `agents/verifier.py`、`orchestration/requirements.py` |
+| Agent 能力与 Python 环境检查 | `agents/capabilities.py`、`tools/python_environment.py` |
 | 模型输入如何构建和控制预算 | `context/builder.py`、`preparation.py`、`call_context.py` |
 | 工具如何校验参数并调用实现 | `tools/registry.py`、`dispatcher.py` |
 | 工具是否允许执行、如何恢复 | `harness/execution.py`、`coordinator.py` |
