@@ -8,7 +8,11 @@ ResearchAgent 只有 Tavily Web 能力。CodeAgent 处理文件、命令和 Pyth
 
 Specialist 完成后 Graph 构造独立 Verifier Base Context：原始任务、全局标准、当前 Todo/Handoff、当前 Result 和相关历史。不会继承 Specialist 内部 messages。Verifier 的短期取证消息经过同一个 ContextRuntime，预算与压缩仍生效。
 
-Verifier 通过 `read_evidence` 查看结果附带证据，或通过文件、环境、测试工具独立取证；再单独调用 `submit_verification`。它不能写文件、安装包、调用任意命令、委派或结束任务。默认上限为 6 次模型调用、8 次工具调用。
+Verifier 通过 `read_evidence` 查看结果附带证据，或通过文件、环境、测试工具独立取证；再单独调用 `submit_verification`。它不能写文件、安装包、调用任意命令、委派或结束任务。
+
+取证阶段默认最多 6 轮模型调用、8 次取证工具尝试（含被 Harness 拒绝的尝试）。提交报告不占取证次数。任一取证预算耗尽且尚未提交时，先保存本轮全部 ToolCall/ToolResult，再增加唯一一次收尾模型调用；收尾仅暴露并允许 `submit_verification`，不能继续取证。因此验证循环至多调用 `model.complete` 7 次，不含适配器自身有限的空响应/网络重试及 ContextRuntime 的摘要调用。
+
+每轮上下文显示剩余取证次数、轮数和已读证据索引，同一证据可支持多条验收条件。批量调用超出剩余预算时，未执行项返回 `verification_evidence_budget_exceeded`，不调用 handler，仍保持消息完整配对。收尾必须单独提交；普通文本、继续取证或非法报告都不会再获得一次机会，而是返回 `model_response / retryable=false`。这表示验证未完成，不代表产物已经被判定不合格；合法的证据不足报告仍归类为 `insufficient_evidence`，绝不自动 PASS。
 
 ## 通过条件
 

@@ -15,7 +15,7 @@ from tikiagent.harness.persistence.trace import _redact
 from tikiagent.orchestration.contracts import ResearchResult, VerificationReport, VerificationCheck
 from tikiagent.orchestration.requirements import CriterionAssessment, assessments_valid
 from tikiagent.tools.dispatcher import Dispatcher
-from tikiagent.tools.models import ToolExecutionError
+from tikiagent.tools.models import ToolExecutionError, ToolError, ToolResult
 from tikiagent.tools.registry import ToolRegistry, RegisteredTool
 
 
@@ -39,6 +39,8 @@ class VerifierAgent:
 
     def __init__(self, model, registry: ToolRegistry, *, context_runtime=None, observer=None,
                  max_steps: int = 6, max_tool_calls: int = 8):
+        if min(max_steps, max_tool_calls) < 1:
+            raise ValueError("验证取证预算必须为正数")
         self.model = model
         self.registry = registry
         self.context_runtime = context_runtime or ContextRuntime()
@@ -89,6 +91,8 @@ class VerifierAgent:
 
         registry.register(RegisteredTool("read_evidence", "分页读取当前 Result 或本轮验证产生的真实证据", ReadEvidenceArgs, read_evidence))
         registry.register(RegisteredTool("submit_verification", "逐条提交验收判断；passed 不由模型直接指定", SubmitVerificationArgs, submit_verification))
+        final_registry = ToolRegistry()
+        final_registry.register(registry.get("submit_verification"))
         harness = ExecutionHarness(Dispatcher(registry), permission_policy=RuleBasedPermissionPolicy(allowed_tools=registry.names()))
         context = base_context or BaseContext(agent="verifier", working_memory=WorkingMemory(task=handoff.instruction, phase="verification", instruction=handoff.instruction))
         # 将当前验收契约和声明放在硬上下文；完整执行输出按需读取，不整份复制进 Prompt。
@@ -99,39 +103,61 @@ class VerifierAgent:
         context = context.model_copy(update={"working_memory": context.working_memory.model_copy(update={"instruction": instruction})})
         local = LocalMemoryManager()
         count = 0
-        category = "budget"
-        reason = "验证预算耗尽，未取得完整验收报告"
-        for step in range(self.max_steps):
-            prepared = self.context_runtime.prepare(base_context=context, local_memory=local.memory, registry=registry)
+        category = "model_response"
+        reason = "Verifier 未提交结构化验收报告"
+        step = 0
+        while True:
+            # 取证与提交分开计费：最多 max_steps 轮取证，再额外给一次只提交的机会。
+            finalizing = count >= self.max_tool_calls or step >= self.max_steps
+            stage = "verification_finalization" if finalizing else "verification"
+            budget_hint = json.dumps({"stage": stage,
+                "remaining_evidence_calls": max(0, self.max_tool_calls - count),
+                "remaining_evidence_rounds": max(0, self.max_steps - step),
+                "observed_evidence": [{"evidence_id": ref, "usable": records[ref]["usable"]} for ref in sorted(observed)],
+                "instruction": "只根据已有证据单独提交报告，证据不足如实填写；同一证据可支持多条验收条件。" if finalizing else "证据足够就单独提交报告，避免重复取证。"}, ensure_ascii=False)
+            context = context.model_copy(update={"working_memory": context.working_memory.model_copy(
+                update={"phase": stage, "instruction": instruction + "\n验证运行状态：" + budget_hint})})
+            prepared = self.context_runtime.prepare(base_context=context, local_memory=local.memory,
+                registry=final_registry if finalizing else registry)
             context = prepared.base_context
             local.replace(prepared.local_memory)
             response = self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
-            self._emit("model_response", execution_context, handoff.handoff_id, {"agent": "verifier", **response.diagnostics})
+            self._emit("model_response", execution_context, handoff.handoff_id, {"agent": "verifier", "stage": stage, **response.diagnostics})
+            step += 1
+            if finalizing:
+                reason = "验证取证预算耗尽，最终提交机会未产生合法验收报告；尚未完成验收，不代表产物不合格"
             if not response.tool_calls:
-                category, reason = "model_response", "Verifier 未提交结构化验收报告"
                 break
             messages = []
             for call in response.tool_calls:
-                if count >= self.max_tool_calls:
-                    break
-                count += 1
                 try:
                     args = json.loads(call.arguments_json)
                 except ValueError:
                     args = None  # Basic Validation 返回结构化错误，不执行 handler。
-                if call.name == "submit_verification" and len(response.tool_calls) != 1:
-                    # 模型必须真正观察取证结果之后，再单独提交报告。
-                    args = None
                 self._emit("tool_call_requested", execution_context, call.tool_call_id, {"tool_name": call.name, "agent": "verifier", "arguments": args})
-                outcome = harness.handle({"tool_call_id": call.tool_call_id, "name": call.name, "arguments": args},
-                    context=execution_context.model_copy(update={"agent": "verifier", "exposed_tools": prepared.tool_view.exposed_names}),
-                    before_execute=lambda _call: self._emit("tool_execution_started", execution_context, call.tool_call_id, {"tool_name": call.name, "agent": "verifier"}))
-                observation = outcome.tool_result
-                if observation is None:
-                    raise RuntimeError("Verifier 不支持挂起审批")
+                rejection = None
+                if call.name == "submit_verification" and len(response.tool_calls) != 1:
+                    rejection = ("verification_submission_must_be_single", "提交报告必须单独调用，先观察全部取证结果")
+                elif call.name != "submit_verification" and finalizing:
+                    rejection = ("tool_not_exposed", "验证收尾阶段只允许 submit_verification，未执行取证工具")
+                elif call.name != "submit_verification" and count >= self.max_tool_calls:
+                    rejection = ("verification_evidence_budget_exceeded", "取证预算已耗尽，本项未执行；请根据已取得证据提交报告")
+                if rejection:
+                    # 批量中被拒绝的调用仍有对应 ToolResult，不伪造执行，不丢失消息配对。
+                    observation = ToolResult(tool_call_id=call.tool_call_id, tool_name=call.name, ok=False,
+                        error=ToolError(code=rejection[0], message=rejection[1]))
+                else:
+                    if call.name != "submit_verification":
+                        count += 1
+                    outcome = harness.handle({"tool_call_id": call.tool_call_id, "name": call.name, "arguments": args},
+                        context=execution_context.model_copy(update={"agent": "verifier", "exposed_tools": prepared.tool_view.exposed_names}),
+                        before_execute=lambda _call: self._emit("tool_execution_started", execution_context, call.tool_call_id, {"tool_name": call.name, "agent": "verifier"}))
+                    observation = outcome.tool_result
+                    if observation is None:
+                        raise RuntimeError("Verifier 不支持挂起审批")
                 self._emit("tool_result_received", execution_context, call.tool_call_id,
                            {"tool_name": call.name, "agent": "verifier", "tool_result": observation.model_dump(mode="json")})
-                if call.name not in {"submit_verification", "read_evidence"}:
+                if not rejection and call.name not in {"submit_verification", "read_evidence"}:
                     evidence_id = f"verification:{uuid4()}"
                     records[evidence_id] = {"usable": self._usable(observation.model_dump()), "data": observation.model_dump(mode="json")}
                     observed.add(evidence_id)
@@ -139,11 +165,10 @@ class VerifierAgent:
                 else:
                     content = observation.model_dump(mode="json")
                 messages.append({"role": "tool", "tool_call_id": call.tool_call_id, "content": json.dumps(content, ensure_ascii=False)})
-                if submitted:
-                    break
-            if submitted or count >= self.max_tool_calls:
-                break
+            # 即使恰好耗尽预算，也要先让本轮全部结果成为完整交互。
             local.append(interaction_id=f"verify-{step}", assistant_message=ResearchAgent._canonical_assistant_message(response), tool_messages=messages)
+            if submitted or finalizing:
+                break
 
         assessments, recommendation = submitted or ([], reason)
         passed = assessments_valid(handoff.acceptance_criteria, assessments, records)

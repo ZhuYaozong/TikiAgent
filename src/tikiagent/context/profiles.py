@@ -149,8 +149,9 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
         ],
         phase_rules={
             "verification": ["只读取证据并报告检查结果"],
+            "verification_finalization": ["取证预算已经耗尽，这是唯一一次额外提交机会", "只允许单独调用 submit_verification；根据已读证据逐项判断，证据不足填写 insufficient_evidence，不得猜测通过"],
         },
-        tool_names_by_phase={"verification": {"read_file", "list_files", "grep", "inspect_python_environment", "probe_python_import", "run_verification_tests", "read_evidence", "submit_verification"}},
+        tool_names_by_phase={"verification": {"read_file", "list_files", "grep", "inspect_python_environment", "probe_python_import", "run_verification_tests", "read_evidence", "submit_verification"}, "verification_finalization": {"submit_verification"}},
         allowed_record_types={"result", "verification", "note", "error"},
         retrieval={"max_records": 4},
     ),
