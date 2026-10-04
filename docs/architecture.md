@@ -32,6 +32,8 @@ Supervisor ──delegate──▶ ResearchAgent / CodeAgent
 
 Supervisor 负责理解、规划、委派、重试和结束判断。Specialist 只完成自己的任务：ResearchAgent 进行检索与来源整理，CodeAgent 操作 Workspace 并运行验证。每个 Specialist Result 都进入 Verification Gate，Verifier 只报告证据和失败原因，最终路由仍由 Supervisor 决定。
 
+正式应用的 Gate 内部使用独立 `VerifierAgent` 按冻结的 Todo 验收条件取证。Gate 和 FINISH 保留身份、覆盖与证据引用的机械检查；旧规则验证器只作为基线/测试实现。环境任务与产物任务分别验收，不按文件扩展名强加测试。详见 [验证契约](verification-agent.md)。
+
 结束条件不是“某个工具成功返回”，而是：
 
 ```text

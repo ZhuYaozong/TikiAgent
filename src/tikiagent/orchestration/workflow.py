@@ -42,6 +42,7 @@ from tikiagent.orchestration.contracts import (
     VerificationReport,
 )
 from tikiagent.orchestration.guards import latest_result_is_verified
+from tikiagent.orchestration.requirements import report_satisfies
 from tikiagent.orchestration.state import (
     TikiState,
     create_multi_agent_state,
@@ -245,6 +246,8 @@ class MultiAgentWorkflow:
             to_agent=target,
             todo_id=todo.todo_id,
             delivery_mode=todo.delivery_mode,
+            required_capabilities=todo.required_capabilities,
+            acceptance_criteria=todo.acceptance_criteria,
             instruction=decision.instruction,
             # 应用显式选中的跨 Turn Result 必须随 Handoff 到达 Specialist；
             # Retriever 仍会强制同 Session 与 Profile record type 边界。
@@ -353,7 +356,7 @@ class MultiAgentWorkflow:
             raise RuntimeError("CodeAgent 未配置")
         previous_report = state["specialist_verifications"].get("code_agent")
         phase = (
-            "inspection"
+            "environment" if handoff.delivery_mode == "environment" else "inspection"
             if handoff.delivery_mode == "inspection"
             else "debugging"
             if previous_report is not None and not previous_report.passed
@@ -535,12 +538,19 @@ class MultiAgentWorkflow:
         if raw_result is None:
             raise RuntimeError("Verification Gate 缺少 Specialist Result")
 
-        # 当前 Gate 是规则/环境验证，直接消费结构化数据，不构造 LLM Prompt。
+        # 规则验证不需要 Prompt；Agent 验证独立构建上下文，不继承子 Agent 消息。
         verification_arguments = {
             "handoff": handoff,
             "raw_result": raw_result,
             "specialist_results": state["specialist_results"],
         }
+        if getattr(self.verification_gate, "supports_context", False):
+            verification_arguments["base_context"] = self._build_context(
+                state=state, agent="verifier", phase="verification",
+                instruction=handoff.instruction,
+                context_refs=[handoff.handoff_id, raw_result["result_id"], *handoff.context_refs],
+                keywords=[handoff.instruction],
+            )
         if (getattr(self.verification_gate, "supports_related_results", False)
                 and getattr(self.supervisor, "supports_tool_loop", False)):
             # 多 Todo 下来源属于本次委派，不能误用同一 Agent 后来的另一份结果。
@@ -830,7 +840,7 @@ class MultiAgentWorkflow:
             for item in state["task_board"].items.values():
                 result = state["results_by_id"].get(item.result_id, {})
                 report = state.get("verifications_by_id", {}).get(item.verification_id, {})
-                if (item.status != "completed" or not report.get("passed")
+                if (item.status != "completed" or not report.get("passed") or not report_satisfies(item, report)
                         or result.get("handoff_id") != item.handoff_id
                         or result.get("result_id") != item.result_id
                         or report.get("result_id") != item.result_id

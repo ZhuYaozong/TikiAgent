@@ -20,6 +20,9 @@ _SECRET_KEYS = {
     "password",
     "secret",
     "token",
+    "access_token",
+    "refresh_token",
+    "cookie",
 }
 
 

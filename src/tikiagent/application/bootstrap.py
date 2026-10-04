@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 import os
 from dotenv import load_dotenv
 
 from tikiagent.agents.code import MultiAgentCodeAgent
 from tikiagent.agents.research import ResearchAgent
 from tikiagent.agents.planning import PlanningSupervisorAgent
+from tikiagent.agents.verifier import VerifierAgent
 from tikiagent.context.compression.llm import SummaryEngine, LLMBaseCompressor, LLMLocalCompressor
 from tikiagent.context.compression.models import ContextBudget
 from tikiagent.context.preparation import ContextRuntime
@@ -31,7 +31,7 @@ from tikiagent.context.memory.history import JsonlHistoryStore
 from tikiagent.context.models import BaseContext
 from tikiagent.harness.coordinator import ExecutionCoordinator
 from tikiagent.harness.execution import ExecutionHarness
-from tikiagent.harness.permissions.policy import FixedCommandPermissionPolicy
+from tikiagent.harness.permissions.policy import RuleBasedPermissionPolicy, DEFAULT_ALLOWED_TOOLS
 from tikiagent.harness.persistence.checkpoint import JsonCheckpointStore
 from tikiagent.harness.persistence.trace import JsonlTraceStore
 from tikiagent.harness.scope import ExecutionContext
@@ -47,10 +47,8 @@ from tikiagent.tools.commands import register_command_tool
 from tikiagent.tools.dispatcher import Dispatcher
 from tikiagent.tools.files import build_file_registry, build_read_only_file_registry
 from tikiagent.tools.web import build_web_registry
-from tikiagent.verification.artifacts import ArtifactAwareCodeVerifier
-from tikiagent.verification.environment import CommandCheck
+from tikiagent.tools.python_environment import register_python_environment_tools
 from tikiagent.verification.gate import VerificationGate
-from tikiagent.verification.research import ResearchResultVerifier
 
 
 CODE_SYSTEM_PROMPT = """你是 TikiAgent CodeAgent。
@@ -207,9 +205,11 @@ class ApplicationRuntimeFactory:
         workspace = Workspace(self.data_dir / "workspaces" / session_id)
         code_registry = build_file_registry(workspace)
         register_command_tool(code_registry, workspace)
+        register_python_environment_tools(code_registry, workspace)
         code_dispatcher = Dispatcher(code_registry)
         coordinator = ExecutionCoordinator(
-            ExecutionHarness(code_dispatcher),
+            ExecutionHarness(code_dispatcher, permission_policy=RuleBasedPermissionPolicy(
+                allowed_tools=DEFAULT_ALLOWED_TOOLS | {"inspect_python_environment", "probe_python_import"})),
             self.checkpoints,
             trace,
             lifecycle_observer=HarnessEventForwarder(self.event_bus),
@@ -225,34 +225,13 @@ class ApplicationRuntimeFactory:
             )
         )
 
-        # Verifier 使用 Artifact 类型选择确定性检查，不执行模型生成的验证命令。
+        # 验证 Agent 仅拥有受控取证入口，Gate 仍负责身份与验收完整性硬检查。
         verifier_registry = build_read_only_file_registry(workspace)
-        register_command_tool(verifier_registry, workspace)
-        verifier_dispatcher = Dispatcher(verifier_registry)
-        command = (
-            sys.executable,
-            "-B",
-            "-m",
-            "unittest",
-            "discover",
-            "-s",
-            ".",
-            "-p",
-            "test_*.py",
-            "-v",
-        )
+        register_python_environment_tools(verifier_registry, workspace, tests=True)
+        verifier = VerifierAgent(self.model, verifier_registry, context_runtime=context_runtime(), observer=observe)
         gate = VerificationGate(
-            research_verifier=ResearchResultVerifier(min_sources=1),
-            code_verifier=ArtifactAwareCodeVerifier(
-                dispatcher=verifier_dispatcher,
-                execution_harness=ExecutionHarness(
-                    verifier_dispatcher,
-                    permission_policy=FixedCommandPermissionPolicy(
-                        allowed_commands={command}
-                    ),
-                ),
-                python_test_check=CommandCheck(name="python-unittest", command=command),
-            ),
+            research_verifier=verifier,
+            code_verifier=verifier,
         )
         return MultiAgentWorkflow(
             supervisor=PlanningSupervisorAgent(self.model, context_runtime=context_runtime(), observer=observe),

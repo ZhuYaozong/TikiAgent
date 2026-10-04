@@ -18,6 +18,8 @@ from tikiagent.orchestration.contracts import SupervisorDecision, SupervisorPlan
 from tikiagent.tools.dispatcher import Dispatcher
 from tikiagent.tools.models import ToolError, ToolExecutionError, ToolResult
 from tikiagent.tools.registry import RegisteredTool, ToolRegistry
+from tikiagent.agents.capabilities import capability_prompt, supports
+from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, DeliveryMode
 
 
 class Arguments(BaseModel):
@@ -28,8 +30,10 @@ class PlannedTodo(Arguments):
     todo_id: str = Field(min_length=1, max_length=100)
     description: str = Field(min_length=1, max_length=2000)
     owner: Literal["research_agent", "code_agent"]
-    delivery_mode: Literal["artifact", "inspection"] = Field(default="artifact", description="创建/修改文件用 artifact；只读调查用 inspection，不能用于规避交付要求")
+    delivery_mode: DeliveryMode = Field(default="artifact", description="文件交付用 artifact；只读文件调查用 inspection；依赖安装/环境操作用 environment，不要求凭空创建报告或测试")
     depends_on: list[str] = Field(default_factory=list, max_length=20)
+    required_capabilities: list[Capability] = Field(min_length=1, max_length=5)
+    acceptance_criteria: list[AcceptanceCriterion] = Field(min_length=1, max_length=12)
 
 
 class PlanArgs(Arguments):
@@ -110,20 +114,29 @@ class PlanningSupervisorAgent:
                 item = PlannedTodo.model_validate(raw)
                 if item.owner not in available_agents:
                     fail("agent_unavailable", "计划引用未配置的 Agent")
+                if not supports(item.owner, item.required_capabilities):
+                    fail("capability_mismatch", "Agent 不支持声明的能力；本地环境与文件调查交给 CodeAgent")
+                ids = [criterion.criterion_id for criterion in item.acceptance_criteria]
+                if len(ids) != len(set(ids)) or not any(c.required for c in item.acceptance_criteria):
+                    fail("invalid_acceptance", "验收项 ID 必须唯一，至少一项为必需")
+                if item.owner == "research_agent" and item.delivery_mode == "environment":
+                    fail("capability_mismatch", "ResearchAgent 不能执行本地环境任务")
                 if item.todo_id in items:
                     fail("invalid_plan", "Todo ID 重复")
                 previous = old.items.get(item.todo_id)
                 if previous is not None:
+                    if previous.acceptance_criteria and previous.acceptance_criteria != item.acceptance_criteria:
+                        fail("immutable_acceptance", "已有 Todo 验收项不能删除或放宽；失败需要补充证据或调整执行方式")
                     if previous.delivery_mode != item.delivery_mode:
                         fail("immutable_delivery_mode", "已有 Todo 的验收模式不可降级或改写")
                     if previous.status != "pending" and (
                         previous.description != item.description or previous.owner != item.owner
                         or previous.delivery_mode != item.delivery_mode or previous.depends_on != item.depends_on
+                        or previous.required_capabilities != item.required_capabilities
                     ):
                         fail("immutable_todo", "已开始的 Todo 不得重写；请增加修复步骤")
                     # 已开始项保留全部真实状态，模型不能传入完成状态或结果身份。
-                    new = previous.model_copy(update=item.model_dump(exclude={"todo_id"}))
-                    items[item.todo_id] = TodoItem.model_validate(new.model_dump())
+                    items[item.todo_id] = TodoItem.model_validate({**previous.model_dump(), **item.model_dump()})
                 else:
                     items[item.todo_id] = TodoItem.model_validate(item.model_dump())
             if not set(old.items) <= set(items):
@@ -158,6 +171,11 @@ class PlanningSupervisorAgent:
             todo = working["task_board"].items.get(todo_id)
             if todo is None or todo.status not in {"pending", "failed"}:
                 fail("todo_not_actionable", "Todo 不存在或不可执行")
+            if not supports(todo.owner, todo.required_capabilities):
+                fail("capability_mismatch", "当前 Todo 的能力不匹配")
+            prior = working.get("verifications_by_id", {}).get(todo.verification_id, {})
+            if prior.get("retryable") is False:
+                fail("execution_blocked", "最新验证报告为不可重试：" + str(prior.get("blocking_reason") or prior.get("failure_category")))
             if any(working["task_board"].items[d].status != "completed" for d in todo.depends_on):
                 fail("dependency_incomplete", "依赖 Todo 尚未完成")
             if state["delegation_count"] >= state["max_delegations"]:
@@ -212,12 +230,13 @@ class PlanningSupervisorAgent:
             ], *working["session_context_refs"]]))
             context = context_builder.build(
                 request=ContextRequest(agent="supervisor", task_id=state["task_id"], session_id=state["session_id"],
-                                       phase="orchestration", instruction="观察最新事实，自主规划、委派、完成或停止。", context_refs=refs),
+                                       phase="orchestration", instruction="观察最新事实，自主规划、委派、完成或停止。\n" + capability_prompt(available_agents), context_refs=refs),
                 task=state["task"], acceptance_criteria=working["acceptance_criteria"], task_board=working["task_board"],
             )
             prepared = self.context_runtime.prepare(base_context=context, local_memory=local.memory, registry=registry)
             local.replace(prepared.local_memory)
             response = self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
+            self._emit("model_response", working, data={"agent": "supervisor", **response.diagnostics})
             calls = response.tool_calls
             if not calls:
                 chosen = SupervisorDecision(action="stop", target_agent=None, instruction="", reason="Supervisor 未请求编排工具：" + (response.final_text or "无输出"))

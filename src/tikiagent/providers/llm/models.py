@@ -1,7 +1,7 @@
 """模型供应商无关的响应模型与接口。"""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -24,6 +24,7 @@ class ModelResponse:
     assistant_message: dict[str, Any]
     tool_calls: tuple[ModelToolCall, ...] = ()
     final_text: str | None = None
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 class ModelClient(Protocol):

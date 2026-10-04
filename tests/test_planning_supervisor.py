@@ -13,6 +13,10 @@ from tikiagent.providers.llm.models import ModelResponse, ModelToolCall
 
 
 def call(name, args, call_id=None):
+    if name == "update_plan":
+        for todo in args["todos"]:
+            todo.setdefault("required_capabilities", ["web_research" if todo["owner"] == "research_agent" else "workspace_read"])
+            todo.setdefault("acceptance_criteria", [{"criterion_id": "done", "description": "交付已核实"}])
     return ModelResponse(assistant_message={"role": "assistant"}, tool_calls=(
         ModelToolCall(call_id or name, name, json.dumps(args, ensure_ascii=False)),
     ))
@@ -64,6 +68,9 @@ class Gate:
 
     def verify(self, *, handoff, raw_result, specialist_results):
         return VerificationReport(result_id=raw_result["result_id"], handoff_id=handoff.handoff_id,
+                                  todo_id=handoff.todo_id,
+                                  assessments=[{"criterion_id": c.criterion_id, "status": "passed" if self.passed else "failed", "evidence_refs": ["fixture"], "reason": "离线 Gate 夹具"} for c in handoff.acceptance_criteria],
+                                  evidence_records={"fixture": {"usable": True}},
                                   subject_agent=handoff.to_agent, passed=self.passed, checks=[],
                                   failures=[] if self.passed else ["permission_denied: 所需能力不可用"],
                                   evidence=[], recommendation="finish" if self.passed else "stop")
@@ -115,6 +122,27 @@ def test_dependency_cannot_be_bypassed():
     assert "dependency_incomplete" in str(model.requests[-1])
 
 
+def test_agent_capability_mismatch_rejected_before_delegation():
+    bad = call("update_plan", {"goal": "本地依赖检查", "acceptance_criteria": ["查明版本"],
+        "todos": [{"todo_id": "env", "description": "查询 Python", "owner": "research_agent",
+                   "required_capabilities": ["python_environment"]}]})
+    model, code, graph = workflow([bad, stop()])
+    graph.research_agent = object()
+    result = graph.invoke("查询本地环境")
+    assert not result["task_board"].items and not code.calls
+    assert "capability_mismatch" in str(model.requests[-1])
+
+
+def test_todo_criteria_cannot_be_rewritten_to_avoid_failure():
+    initial = plan("a")
+    args = json.loads(initial.tool_calls[0].arguments_json)
+    args["todos"][0]["acceptance_criteria"][0]["description"] = "只需声称完成"
+    model, _, graph = workflow([initial, call("update_plan", args), stop()])
+    state = graph.invoke("文件任务")
+    assert "immutable_acceptance" in str(model.requests[-1])
+    assert state["task_board"].items["a"].acceptance_criteria[0].description == "交付已核实"
+
+
 def test_replanning_cannot_delete_requirements():
     model, code, graph = workflow([plan("a", "b"), plan("a"), stop()])
     result = graph.invoke("两个任务")
@@ -164,6 +192,7 @@ def test_pending_supervisor_delegation_survives_approval_resume(tmp_path):
     assert pending["handoff_id"] == paused["latest_handoff"].handoff_id
     assert len(cp.workflow_snapshot.state["supervisor_runtime"]["local_memory"]["recent_interactions"]) == 1
     _, second = build_workflow(tmp_path, ScriptedModel([final_response()]))
+    second.verification_gate = Gate()
     model = Script([call("finish_task", {"reason": "已验证"})])
     second.supervisor = PlanningSupervisorAgent(model)
     approval = cp.approval_request
