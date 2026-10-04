@@ -41,6 +41,7 @@ class RuleBasedBaseCompressor:
     def compress(self, context: BaseContext) -> BaseCompressionResult:
         memory = context.working_memory
         protected = set(memory.protected_refs)
+        protected -= {fact["record_id"] for fact in memory.control_facts if "record_id" in fact}
         preserved = [
             item
             for item in memory.relevant_history
@@ -90,6 +91,9 @@ class RuleBasedBaseCompressor:
                 "history_summary": new_summary,
                 # old History 已被 summary 替换，不在后面重复追加。
                 "relevant_history": preserved,
+                "history_summary_refs": list(dict.fromkeys([
+                    *memory.history_summary_refs, *[item.record_id for item in removed],
+                ])),
             }
         )
         return BaseCompressionResult(

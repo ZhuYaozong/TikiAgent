@@ -98,7 +98,7 @@ class VerifierAgent:
         # 将当前验收契约和声明放在硬上下文；完整执行输出按需读取，不整份复制进 Prompt。
         instruction = json.dumps({"instruction": handoff.instruction, "todo_id": handoff.todo_id,
             "handoff_id": handoff.handoff_id, "result_id": result.result_id,
-            "criteria": [c.model_dump() for c in handoff.acceptance_criteria], "claim": result.summary,
+            "criteria": [c.model_dump() for c in handoff.acceptance_criteria], "claim_excerpt": result.summary[:2000],
             "evidence_ids": list(records)}, ensure_ascii=False)
         context = context.model_copy(update={"working_memory": context.working_memory.model_copy(update={"instruction": instruction})})
         local = LocalMemoryManager()

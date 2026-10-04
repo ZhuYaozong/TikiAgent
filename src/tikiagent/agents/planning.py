@@ -11,6 +11,7 @@ from tikiagent.context.memory.local import LocalMemoryManager
 from tikiagent.context.memory.models import LocalMemory
 from tikiagent.context.models import ContextRequest, TaskBoard, TodoItem
 from tikiagent.context.preparation import ContextRuntime
+from tikiagent.context.projections import verification_view
 from tikiagent.harness.execution import ExecutionHarness
 from tikiagent.harness.permissions.policy import RuleBasedPermissionPolicy
 from tikiagent.harness.scope import ExecutionContext, ExecutionScope
@@ -307,7 +308,7 @@ class PlanningSupervisorAgent:
         observation = ToolResult(tool_call_id=pending["tool_call_id"], tool_name="delegate_task", ok=True,
                                  output={"todo_id": handoff.todo_id, "handoff_id": handoff.handoff_id,
                                          "result_id": result["result_id"], "summary": result.get("summary", "")[:2000],
-                                         "verification": report.model_dump(mode="json")})
+                                         "verification": verification_view(report.model_dump(mode="json"))})
         local.append(interaction_id=f"delegation-{handoff.handoff_id}", assistant_message=pending["assistant_message"],
                      tool_messages=[{"role": "tool", "tool_call_id": pending["tool_call_id"], "content": observation.model_dump_json()}])
         runtime.update(pending=None, local_memory=local.memory.model_dump(mode="json"))

@@ -12,6 +12,7 @@ from tikiagent.context.models import (
     WorkingMemory,
 )
 from tikiagent.context.profiles import DEFAULT_CONTEXT_PROFILES
+from tikiagent.context.projections import verification_facts, verification_view
 from tikiagent.context.schema import ContextAgentName
 from tikiagent.context.task_board import todos_for_owner, todos_for_refs
 
@@ -87,6 +88,10 @@ class ContextBuilder:
                 relevant_history=history,
                 relevant_notepad=relevant_notepad,
                 protected_refs=protected_refs,
+                control_facts=[
+                    {"record_id": record.record_id, **verification_facts(record.payload)}
+                    for record in history if record.record_type == "verification"
+                ],
             ),
         )
 
@@ -94,12 +99,27 @@ class ContextBuilder:
     def _history_view(record):
         """长 Result 正文只展示摘录；身份与来源保留，原文仍在 History Store。"""
 
+        if record.record_type == "verification":
+            return record.model_copy(update={
+                "summary": record.summary[:800],
+                "payload": verification_view(record.payload),
+            })
         if record.record_type != "result":
             return record
         from copy import deepcopy
 
         payload = deepcopy(record.payload)
         changed = False
+        if payload.get("tool_results"):
+            # CodeResult 原始工具输出留在 History / Verifier 证据仓库，模型只接收执行索引。
+            payload["tool_results"] = [
+                {"tool_call_id": item.get("tool_call_id"), "tool_name": item.get("tool_name"),
+                 "ok": item.get("ok"),
+                 "error_code": (item.get("error") or {}).get("code"),
+                 "evidence_id": f"execution:{index}"}
+                for index, item in enumerate(payload["tool_results"])
+            ]
+            changed = True
         if isinstance(payload.get("summary"), str) and len(payload["summary"]) > 2000:
             payload["summary"] = payload["summary"][:2000] + "…[结果摘要摘录]"
             changed = True

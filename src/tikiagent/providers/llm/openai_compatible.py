@@ -15,6 +15,10 @@ from tikiagent.providers.llm.structured_output import (
 )
 
 
+class ModelOutputError(RuntimeError):
+    """模型输出无法安全执行；不携带可能含敏感数据的响应正文。"""
+
+
 class OpenAICompatibleClient:
     """可通过配置连接 DeepSeek、vLLM 等兼容后端。"""
 
@@ -53,16 +57,30 @@ class OpenAICompatibleClient:
         tool_schemas: Sequence[Mapping[str, Any]],
     ) -> ModelResponse:
         self._check_budget(messages, self._convert_tools(tool_schemas))
-        # 仅重试空响应一次；此处没有执行工具，不会重放已有副作用。
+        request_messages = list(messages)
+        # 空响应、截断或坏参数合计最多重试一次，绝不交给工具执行半截参数。
         for attempt in range(2):
+            self._check_budget(request_messages, self._convert_tools(tool_schemas))
             response = self.client.chat.completions.create(
-                model=self.settings.model, messages=list(messages),
+                model=self.settings.model, messages=request_messages,
                 tools=self._convert_tools(tool_schemas), tool_choice="auto",
                 max_tokens=self.settings.max_output_tokens,
             )
             if not getattr(response, "choices", None):
                 raise ValueError(f"模型返回非 ChatCompletion 响应：type={type(response).__name__}，缺少 choices")
             message = response.choices[0].message
+            invalid = getattr(response.choices[0], "finish_reason", None) == "length"
+            for call in message.tool_calls or []:
+                try:
+                    invalid = invalid or not isinstance(json.loads(call.function.arguments), dict)
+                except (ValueError, TypeError):
+                    invalid = True
+            if invalid:
+                if attempt:
+                    raise ModelOutputError("模型连续返回截断或无效工具参数；未执行本批工具")
+                request_messages = [*messages, {"role": "user", "content":
+                    "上一响应截断或工具参数不完整，未执行任何工具。请简短输出，工具参数必须是完整 JSON 对象；证据使用引用，勿复制长正文。"}]
+                continue
             if message.tool_calls or (message.content and message.content.strip()):
                 break
         model_tool_calls = tuple(
@@ -78,7 +96,8 @@ class OpenAICompatibleClient:
             tool_calls=model_tool_calls,
             final_text=message.content,
             diagnostics={"response_type": type(response).__name__, "finish_reason": getattr(response.choices[0], "finish_reason", None),
-                         "has_text": bool(message.content and message.content.strip()), "has_tool_calls": bool(model_tool_calls), "empty_response_retries": attempt},
+                         "has_text": bool(message.content and message.content.strip()), "has_tool_calls": bool(model_tool_calls),
+                         "response_retries": attempt, "empty_response_retries": attempt if request_messages == list(messages) else 0},
         )
 
     def complete_structured(
@@ -102,7 +121,10 @@ class OpenAICompatibleClient:
             if not getattr(response, "choices", None):
                 raise StructuredOutputError(f"模型返回非 ChatCompletion 响应：type={type(response).__name__}，缺少 choices")
             content = response.choices[0].message.content
-            if content is not None:
+            if getattr(response.choices[0], "finish_reason", None) == "length":
+                last_error = StructuredOutputError("模型输出被截断，请缩短内容")
+                content = None
+            elif content is not None:
                 try:
                     return parse_structured_output(content, response_type)
                 except StructuredOutputError as error:

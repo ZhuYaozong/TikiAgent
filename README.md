@@ -279,6 +279,10 @@ uv run --locked python -m compileall -q src tests
 
 当前覆盖包括 Agent 路由、Result/Verification 身份链、Context Compression、Tool Exposure、Permission/Approval、Checkpoint/Resume、Recovery/Reconcile、Session、Event Stream、Artifact Verification、TUI 投影和三类 Demo 生命周期。
 
+上下文只加载有界的 Result/Verification 视图：保留身份关联、逐项验收结论、失败分类和证据引用，完整正文留在 History 按需读取。压缩不能覆盖当前任务、冻结验收条件、TaskBoard 或控制事实。模型截断或工具参数不完整时，最多重新生成一次；本批不完整调用不会执行。
+
+运行失败会保存关联当前 Turn 的失败回复，CLI 返回非零状态，TUI 显示失败。下轮聊天使用逐 Turn 的最新回复，失败、暂停及未记录结果的旧任务不会被当成新指令自动续跑。失败不表示已回滚文件或外部副作用；恢复仍以权威 Checkpoint 为准，不依赖 Trace 猜测执行状态。
+
 只读文件调查使用 `inspection` 验收：Verifier 独立复读文件或目录证据，无需创建报告。创建/修改文件使用 `artifact` 验收，继续检查实际交付物。模型步骤与工具调用分别计数；正式 CodeAgent 默认每次最多 24 次工具调用、每任务最多 60 次，相同工具参数累计失败 3 次后禁止第四次执行。预算包含被拒绝和参数错误的调用，暂停/恢复不会重置已消耗次数。
 
 TUI 中输入 `/paths` 可在本地查看当前 Session 的 Workspace、History/Handoff、Trace 和 Checkpoint 位置。此命令只更新显示，不提交给模型，也不写入任务 History。
@@ -291,6 +295,7 @@ TUI 中输入 `/paths` 可在本地查看当前 Session 的 Workspace、History/
 |---|---|
 | [Architecture](docs/architecture.md) | Control、Context、Execution、Application 四个平面 |
 | [Design Decisions](docs/design-decisions.md) | 身份链、上下文隔离、恢复语义与关键不变量 |
+| [Context & Failure Boundaries](docs/context-failure-boundaries.md) | 有界模型视图、失败 Turn 与恢复边界 |
 | [Architecture Evolution](docs/architecture-evolution.md) | ToolCall → ReAct → LangGraph → Multi-Agent 演进 |
 | [Textual TUI](docs/tui.md) | 交互界面、快捷键、Approval 与 Recovery |
 | [Demo Validation](docs/demos.md) | 三类场景、产物、暂停和恢复 |
@@ -300,7 +305,8 @@ TUI 中输入 `/paths` 可在本地查看当前 Session 的 Workspace、History/
 
 - 单机 JSONL Checkpoint/History，不提供多进程文件锁或分布式 exactly-once；
 - Token 使用字符近似估算，尚未接入供应商精确 Tokenizer；
-- Compressor 使用确定性规则，尚未实现 LLM Structured Summary；
+- 正式应用使用有界 LLM Structured Summary，离线 Runtime 保留规则压缩器；摘要失败或硬约束仍超预算时明确停止，不无限扩大窗口；
+- Workspace 是应用层路径与能力边界，不是操作系统 Sandbox；递归读取逐项校验路径，但不能消除恶意并发替换文件的竞态；
 - Artifact-aware Verifier 首版聚焦 Python、HTML 和普通文本；
 - Research Verification 能证明来源来自真实 Observation，不能自动证明网页内容绝对真实；
 - Demo Validation 不提供任务集、重复采样、成本统计或 Single/Multi-Agent 量化对比。

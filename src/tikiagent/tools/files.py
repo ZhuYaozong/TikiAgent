@@ -44,6 +44,15 @@ def build_file_registry(workspace: Workspace) -> ToolRegistry:
 
     registry = ToolRegistry()
 
+    def safe_entries(target, recursive: bool):
+        """先校验每个子项，再递归；不跟随链接目录，避免越界枚举与链接环。"""
+        for entry in sorted(target.iterdir(), key=lambda item: item.as_posix()):
+            workspace.resolve(entry.relative_to(workspace.root).as_posix())
+            yield entry
+            linked = entry.is_symlink() or (hasattr(entry, "is_junction") and entry.is_junction())
+            if recursive and entry.is_dir() and not linked:
+                yield from safe_entries(entry, True)
+
     def read_file(path: str) -> dict[str, Any]:
         target = workspace.require_file(path)
         return {"path": path, "content": target.read_text(encoding="utf-8")}
@@ -79,7 +88,7 @@ def build_file_registry(workspace: Workspace) -> ToolRegistry:
         recursive: bool = False,
     ) -> dict[str, Any]:
         target = workspace.require_directory(path)
-        entries = target.rglob("*") if recursive else target.iterdir()
+        entries = safe_entries(target, recursive)
         files: list[str] = []
         for entry in sorted(entries, key=lambda item: item.as_posix()):
             display_path = entry.relative_to(workspace.root).as_posix()
@@ -104,7 +113,7 @@ def build_file_registry(workspace: Workspace) -> ToolRegistry:
             ) from error
 
         candidates = [target] if target.is_file() else [
-            item for item in target.rglob("*") if item.is_file()
+            item for item in safe_entries(target, True) if item.is_file()
         ]
         matches: list[dict[str, Any]] = []
         for candidate in candidates:

@@ -119,11 +119,11 @@ def test_empty_response_retried_once_with_diagnostics():
     requests = []
     def create(**kwargs):
         requests.append(kwargs)
-        return SimpleNamespace(choices=[SimpleNamespace(message=Empty(), finish_reason="length")])
+        return SimpleNamespace(choices=[SimpleNamespace(message=Empty(), finish_reason="stop")])
     client = OpenAICompatibleClient(ModelSettings("test", "http://invalid.local", "test"), SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
     response = client.complete([], [])
     assert len(requests) == 2 and requests[0] == requests[1]
-    assert response.diagnostics["empty_response_retries"] == 1 and response.diagnostics["finish_reason"] == "length"
+    assert response.diagnostics["empty_response_retries"] == 1 and response.diagnostics["finish_reason"] == "stop"
 
 
 def test_formal_environment_workflow_finishes_without_install_or_report(tmp_path):

@@ -16,6 +16,7 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
         phase_rules={
             "orchestration": [
                 "先用 update_plan 创建具体 Todo 与依赖；始终保留原始任务和验收要求",
+                  "采用满足任务所需的最小计划；每次委派后已有独立 Verifier，不为重复验收再创建 Todo，除非用户确实要求额外审计",
                 "每个 Todo 声明 required_capabilities 和带 criterion_id 的 acceptance_criteria；不得削弱已冻结验收条件",
                 "ResearchAgent 只有 Tavily 联网能力；本地包版本、解释器与依赖安装交给 CodeAgent 的 environment Todo",
                 "安装依赖以环境事实为准，already satisfied 且版本满足即完成；不要重复升级或无依据重装，不创建无关报告",
@@ -141,6 +142,7 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
         role="只读验证明确绑定的最新 Specialist Result",
         system_rules=[
             "不得修改被验证结果",
+              "报告每项 reason 简短说明结论，使用 evidence_refs 引用已读证据；不要复制整份文件、逐字符计数表或完整工具输出",
             "验证必须绑定 handoff_id 和 result_id",
             "原始任务与当前 Todo 验收条件是标准；Result.summary 是待验证声明，不是证据",
             "先 read_evidence 或通过只读工具取证，再 submit_verification 逐项提交；不得遗漏验收项或虚构 evidence_refs",

@@ -118,7 +118,10 @@ class LLMBaseCompressor:
 
     def compress(self, context: BaseContext) -> BaseCompressionResult:
         memory = context.working_memory
-        soft = [r for r in memory.relevant_history if r.record_id not in memory.protected_refs]
+        # 已独立保存控制事实的验证记录，其长正文允许摘要；兼容旧快照的保护语义。
+        projected = {fact["record_id"] for fact in memory.control_facts if "record_id" in fact}
+        soft = [r for r in memory.relevant_history
+                if r.record_id not in memory.protected_refs or r.record_id in projected]
         recent = {r.record_id for r in soft[-self.recent_records:]} if self.recent_records else set()
         removed = [r for r in soft if r.record_id not in recent]
         if not removed:

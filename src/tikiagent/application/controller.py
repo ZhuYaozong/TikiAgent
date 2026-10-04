@@ -104,14 +104,11 @@ class ApplicationController:
         )
 
         if decision.intent == "CHAT":
-            recent = self.sessions.turns.recent_messages(session_id)
-            # 当前 Turn 已持久化；ChatService 会自行追加本轮 user_input，避免重复注入。
-            if recent and recent[-1] == {"role": "user", "content": user_input}:
-                recent = recent[:-1]
-            content = self.chat.respond(
-                user_input,
-                recent_messages=recent,
-            )
+            recent = self.sessions.turns.recent_messages(session_id, exclude_turn_id=turn.turn_id)
+            try:
+                content = self.chat.respond(user_input, recent_messages=recent)
+            except Exception as error:
+                return self._execution_failed(turn, error, stage="chat")
             outcome = ApplicationOutcome(
                 status="chat_completed",
                 session_id=session_id,
@@ -123,12 +120,15 @@ class ApplicationController:
             return outcome
 
         assert task_id is not None
-        workflow_outcome = self.workflow.start(
-            task=user_input,
-            scope=scope,
-            context_refs=self.context_refs.select(session_id),
-            causation_id=routed.event_id,
-        )
+        try:
+            workflow_outcome = self.workflow.start(
+                task=user_input,
+                scope=scope,
+                context_refs=self.context_refs.select(session_id),
+                causation_id=routed.event_id,
+            )
+        except Exception as error:
+            return self._execution_failed(turn, error, stage="workflow")
         # 冻结顺序：Workflow 内 Checkpoint 成功落盘后，才能更新 Session 引用。
         self._synchronize_checkpoint(session_id, workflow_outcome)
         outcome = self._to_application(workflow_outcome, turn_id=turn.turn_id)
@@ -139,6 +139,26 @@ class ApplicationController:
             "workflow_failed",
         }:
             self._emit_final(outcome)
+        return outcome
+
+    def _execution_failed(self, turn: TurnRecord, error: Exception, *, stage: str) -> ApplicationOutcome:
+        # 仅记录调用失败，不推断副作用是否发生，也不清除/猜测 Checkpoint。
+        # 供应商异常正文可能含凭据，因此只保存受控分类和异常类型。
+        from tikiagent.context.preparation import ContextBudgetExceeded
+        from tikiagent.providers.llm.openai_compatible import ModelOutputError
+
+        category = ("context_budget" if isinstance(error, ContextBudgetExceeded) else
+                    "model_response" if isinstance(error, ModelOutputError) else "execution_error")
+        outcome = ApplicationOutcome(
+            status="chat_failed" if stage == "chat" else "workflow_failed",
+            session_id=turn.session_id, turn_id=turn.turn_id, task_id=turn.task_id,
+            error_category=category, error_stage=stage,
+            checkpoint_id=self.sessions.sessions.load(turn.session_id).active_checkpoint_id,
+            message=f"本轮执行中止：stage={stage}, category={category}, error={type(error).__name__}。"
+                    "不能据此判定任务完成或副作用已回滚；不会自动重跑。",
+        )
+        self._persist_response(outcome)
+        self._emit_final(outcome)
         return outcome
 
     def status(self, *, session_id: str) -> ApplicationOutcome:
@@ -167,14 +187,14 @@ class ApplicationController:
         approved: bool,
     ) -> ApplicationOutcome:
         session = self._require_active(session_id)
-        workflow = self.workflow.resume_approval(
+        workflow = self._resume_call(self.workflow.resume_approval, session,
             checkpoint_id=session.active_checkpoint_id,
             expected_revision=expected_revision,
             scope=self._session_scope(session),
             request_id=request_id,
             approved=approved,
         )
-        return self._finish_resume(session_id, workflow)
+        return workflow if isinstance(workflow, ApplicationOutcome) else self._finish_resume(session_id, workflow)
 
     def recover(
         self,
@@ -190,14 +210,14 @@ class ApplicationController:
         decision = RecoveryDecision.model_validate(
             {"action": action, "decided_by": decided_by, "reason": reason}
         )
-        workflow = self.workflow.recover(
+        workflow = self._resume_call(self.workflow.recover, session,
             checkpoint_id=session.active_checkpoint_id,
             expected_revision=expected_revision,
             scope=self._session_scope(session),
             execution_id=execution_id,
             decision=decision,
         )
-        return self._finish_resume(session_id, workflow)
+        return workflow if isinstance(workflow, ApplicationOutcome) else self._finish_resume(session_id, workflow)
 
     def reconcile(
         self,
@@ -208,14 +228,27 @@ class ApplicationController:
         submission: ReconcileSubmission,
     ) -> ApplicationOutcome:
         session = self._require_active(session_id)
-        workflow = self.workflow.reconcile(
+        workflow = self._resume_call(self.workflow.reconcile, session,
             checkpoint_id=session.active_checkpoint_id,
             expected_revision=expected_revision,
             scope=self._session_scope(session),
             execution_id=execution_id,
             submission=submission,
         )
-        return self._finish_resume(session_id, workflow)
+        return workflow if isinstance(workflow, ApplicationOutcome) else self._finish_resume(session_id, workflow)
+
+    def _resume_call(self, operation, session, **kwargs):
+        from tikiagent.context.preparation import ContextBudgetExceeded
+        from tikiagent.providers.llm.openai_compatible import ModelOutputError
+
+        try:
+            return operation(**kwargs)
+        except (ContextBudgetExceeded, ModelOutputError) as error:
+            # 只关闭已确认进入模型执行阶段的失败；revision/scope 拒绝仍向调用者报错。
+            turn = self._workflow_turn(session.session_id, session.last_task_id)
+            if turn is None:
+                raise
+            return self._execution_failed(turn, error, stage="workflow_resume")
 
     def _finish_resume(
         self,
@@ -290,6 +323,8 @@ class ApplicationController:
                 status=outcome.status,
                 content=outcome.message,
                 checkpoint_id=outcome.checkpoint_id,
+                error_category=outcome.error_category,
+                error_stage=outcome.error_stage,
             )
         )
 
@@ -311,6 +346,8 @@ class ApplicationController:
             correlation_id=outcome.task_id or outcome.session_id,
             causation_id=causation_id,
             message=outcome.message,
+            data={"status": outcome.status, "error_category": outcome.error_category,
+                  "error_stage": outcome.error_stage},
         )
 
     @staticmethod

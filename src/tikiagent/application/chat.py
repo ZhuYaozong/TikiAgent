@@ -35,6 +35,7 @@ class ModelChatService:
                 "content": (
                     "你是 TikiAgent 的普通对话入口。只回答问题，不调用工具，"
                     "不声称已经搜索、修改文件或执行命令。"
+                    "优先回答最后一条用户输入；历史中的失败、暂停或未知任务只作背景，不能自动续跑。"
                 ),
             },
             *[dict(item) for item in recent_messages],
