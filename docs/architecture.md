@@ -32,14 +32,14 @@ Supervisor ──delegate──▶ ResearchAgent / CodeAgent
 
 Supervisor 负责理解、规划、委派、重试和结束判断。Specialist 只完成自己的任务：ResearchAgent 进行检索与来源整理，CodeAgent 操作 Workspace 并运行验证。每个 Specialist Result 都进入 Verification Gate，Verifier 只报告证据和失败原因，最终路由仍由 Supervisor 决定。
 
-正式应用的 Gate 内部使用独立 `VerifierAgent` 按冻结的 Todo 验收条件取证。Gate 和 FINISH 保留身份、覆盖与证据引用的机械检查；旧规则验证器只作为基线/测试实现。环境任务与产物任务分别验收，不按文件扩展名强加测试。详见 [验证契约](verification-agent.md)。
+正式应用必经 Gate，默认执行无模型的基础检查。复杂代码交付或规划时明确要求独立审查的 Todo，才调用独立 `VerifierAgent` 按冻结验收条件取证；基础路径不构建 Verifier Prompt，也不消耗其模型/取证预算。审核级别随 Todo、Handoff 和 Checkpoint 保存。Gate 和 FINISH 保留身份、来源和产物边界；独立审核还检查覆盖与证据引用。环境任务与产物任务分别验收，不按文件扩展名强加测试。详见 [验证契约](verification-agent.md)。
 
 结束条件不是“某个工具成功返回”，而是：
 
 ```text
 最新 Specialist Result
         +
-匹配 result_id / handoff_id / subject_agent 的审核报告
+匹配 result_id / handoff_id / todo_id / subject_agent 的基础检查或独立审核报告
         +
 匹配最新 todo_id / result_id / handoff_id / verification_id 的 Supervisor 接受决定
         +
@@ -49,6 +49,8 @@ Supervisor FINISH
 ```
 
 正式工具型 Supervisor 使用 `review_result` 将“审核意见”与“验收决定”分离。Verifier 不修改 Todo 完成状态；审核后 Todo 等待 `awaiting_review`。接受/带限制接受才会完成该 Todo 并解锁依赖，补做/停止则保留失败事实。质量缺口可以明确接受，身份错配、非法证据、权限阻塞与不存在的文件不可覆盖。旧结构化基线仍使用原 PASS 门控。
+
+`checks_only` 表示只有机械检查，不表示语义验收全部通过；`assessed` 表示取得逐项独立审核报告；`not_performed` 表示审核未完成。审核格式/服务错误不能变成 Research/Code 的重新委派理由。独立审核未完成时，Supervisor 可以对已有真实交付明确带限制接受并披露缺口，但不能将状态改为通过或将已冻结的审核级别降为 basic。
 
 ## Context Plane
 

@@ -12,7 +12,7 @@ TikiAgent 按运行职责组织源码，而不是按开发阶段累积模块。�
 | 多 Agent 如何流转 | `orchestration/workflow.py`、`state.py`、`contracts.py` |
 | Research / Code 如何完成一次委派 | `agents/research.py`、`agents/code.py` |
 | 单 Agent 如何调用工具、暂停和恢复 | `runtime/react.py`、`resumable.py`、`models.py` |
-| 最新 Result 的审核意见与 Supervisor 验收 | `verification/gate.py`、`agents/planning.py`、`orchestration/requirements.py` |
+| 最新 Result 的基础检查、条件审核与 Supervisor 验收 | `verification/gate.py`、`verification/basic.py`、`agents/planning.py`、`orchestration/requirements.py` |
 | 逐项取证与冻结验收契约 | `agents/verifier.py`、`orchestration/requirements.py` |
 | Agent 能力与 Python 环境检查 | `agents/capabilities.py`、`tools/python_environment.py` |
 | 模型输入如何构建和控制预算 | `context/builder.py`、`preparation.py`、`call_context.py` |
@@ -42,6 +42,7 @@ src/tikiagent/
 │   └── completion.py        # 面向用户的最终答案整理
 ├── verification/           # 统一 Gate 与不同证据的验证实现
 │   ├── gate.py
+│   ├── basic.py             # 无模型、无命令的机械检查
 │   ├── environment.py
 │   ├── research.py
 │   ├── artifacts.py

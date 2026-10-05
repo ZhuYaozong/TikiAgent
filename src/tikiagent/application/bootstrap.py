@@ -55,6 +55,7 @@ from tikiagent.tools.files import build_file_registry, build_read_only_file_regi
 from tikiagent.tools.web import build_web_registry
 from tikiagent.tools.python_environment import register_python_environment_tools
 from tikiagent.verification.gate import VerificationGate
+from tikiagent.verification.basic import BasicResultVerifier
 
 
 CODE_SYSTEM_PROMPT = """你是 TikiAgent CodeAgent。
@@ -280,7 +281,7 @@ class ApplicationRuntimeFactory:
             )
         )
 
-        # 验证 Agent 仅拥有受控取证入口，Gate 仍负责身份与验收完整性硬检查。
+        # Gate 默认仅机械检查；复杂 Todo 才调用拥有只读取证能力的独立 Agent。
         verifier_registry = build_read_only_file_registry(workspace)
         register_python_environment_tools(verifier_registry, workspace, tests=True)
         finalizations = FinalizationLedger(self.checkpoints.root / "finalizations")
@@ -290,6 +291,7 @@ class ApplicationRuntimeFactory:
         gate = VerificationGate(
             research_verifier=verifier,
             code_verifier=verifier,
+            basic_verifier=BasicResultVerifier(workspace),
         )
         def artifact_guard(todo, result):
             """接受交付不豁免机械边界：产物必须真实存在且位于 Workspace。"""

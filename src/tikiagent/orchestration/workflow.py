@@ -252,6 +252,8 @@ class MultiAgentWorkflow:
             delivery_mode=todo.delivery_mode,
             required_capabilities=todo.required_capabilities,
             acceptance_criteria=todo.acceptance_criteria,
+            verification_level=todo.verification_level,
+            verification_reason=todo.verification_reason,
             instruction=decision.instruction,
             # 应用显式选中的跨 Turn Result 必须随 Handoff 到达 Specialist；
             # Retriever 仍会强制同 Session 与 Profile record type 边界。
@@ -548,7 +550,8 @@ class MultiAgentWorkflow:
             "raw_result": raw_result,
             "specialist_results": state["specialist_results"],
         }
-        if getattr(self.verification_gate, "supports_context", False):
+        needs_context = getattr(self.verification_gate, "needs_context", None)
+        if (needs_context(handoff) if needs_context else getattr(self.verification_gate, "supports_context", False)):
             verification_arguments["base_context"] = self._build_context(
                 state=state, agent="verifier", phase="verification",
                 instruction=handoff.instruction,
@@ -598,8 +601,12 @@ class MultiAgentWorkflow:
             record_type="verification",
             producer="verifier",
             summary=(
-                f"审核 {handoff.to_agent}："
-                f"{'符合条件' if report.passed else '存在缺口'}；" + ("待 Supervisor 决定" if report.advisory else "旧规则工作流")
+                f"{'基础检查' if report.verification_status == 'checks_only' else '审核'} {handoff.to_agent}："
+                + ("未完成；" if report.verification_status == "not_performed" else
+                   "机械边界满足；" if report.verification_status == "checks_only" and report.passed else
+                   "基础检查阻断；" if report.verification_status == "checks_only" else
+                   "符合条件；" if report.passed else "存在缺口；")
+                + ("待 Supervisor 决定" if report.advisory else "旧规则工作流")
             ),
             payload=report.model_dump(mode="json"),
             refs=[result_id, handoff.handoff_id],

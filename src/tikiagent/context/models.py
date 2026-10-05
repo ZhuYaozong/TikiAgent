@@ -6,7 +6,7 @@ from typing import Any, Literal
 import json
 
 from pydantic import Field
-from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, DeliveryMode, ResultReview
+from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, DeliveryMode, ResultReview, VerificationLevel
 
 from tikiagent.context.compression.models import ContextUsage
 from tikiagent.context.memory.models import (
@@ -39,6 +39,9 @@ class TodoItem(ContextModel):
     depends_on: list[str] = Field(default_factory=list)
     required_capabilities: list[Capability] = Field(default_factory=list)
     acceptance_criteria: list[AcceptanceCriterion] = Field(default_factory=list)
+    # 新规划显式给出 basic；旧 Checkpoint 缺省仍保持独立审核。
+    verification_level: VerificationLevel = "independent"
+    verification_reason: str = "兼容旧任务的独立审核要求"
 
 
 class TaskBoard(ContextModel):

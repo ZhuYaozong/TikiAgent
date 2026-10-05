@@ -29,6 +29,8 @@
 
 ### Changed
 
+- 正式链路默认使用确定性基础 Gate；复杂代码交付或规划要求独立审查时才调用 VerifierAgent。审核级别随 Todo/Handoff/Checkpoint 冻结保存，旧快照保守保持独立审核。
+- 报告、终端和最终回答区分基础检查、独立逐项审核和审核未完成；审核格式/服务错误不再作为重复委派 Specialist 的理由。
 - 正式审核与验收分离：Verifier 提供意见，Supervisor 通过 `review_result` 接受、带限制接受、补做或停止；验收决定进入 History/Checkpoint/Context，TUI 和最终回答明确披露限制。
 - 按职责分离 Agent 角色、单 Agent Runtime、多 Agent Orchestration、Verification、Tools、Providers 和 Interfaces；Context 与 Harness 按子域组织。
 - 早期 ReAct Graph 和 Plan/Verify 实现归入 `baselines/`，正式应用启动不加载这些基线。

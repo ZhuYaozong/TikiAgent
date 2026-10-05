@@ -171,7 +171,9 @@ def test_formal_environment_workflow_finishes_without_install_or_report(tmp_path
     checkpoints = [factory.checkpoints.load(p.stem) for p in (tmp_path / "data/checkpoints").glob("*.json")]
     assert checkpoints and all(c.execution_state == "completed" and c.approval_state == "not_required" for c in checkpoints)
     assert not any(e.event_type == "approval_required" for e in sink.events)
-    assert any(e.event_type == "tool_execution_started" and e.data.get("agent") == "verifier" for e in sink.events)
+    # 简单环境查询仅基础检查，不为独立审核再次执行同样的工具。
+    assert state["specialist_verifications"]["code_agent"].verification_status == "checks_only"
+    assert not any(e.event_type == "tool_execution_started" and e.data.get("agent") == "verifier" for e in sink.events)
     assert "inspect_python_environment" in (tmp_path / "data/traces/session.jsonl").read_text(encoding="utf-8")
 
 
