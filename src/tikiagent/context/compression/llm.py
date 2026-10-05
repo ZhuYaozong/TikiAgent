@@ -153,8 +153,12 @@ class LLMLocalCompressor:
         removed = memory.recent_interactions[:-recent_interaction_limit]
         retained = memory.recent_interactions[-recent_interaction_limit:]
         refs = list(dict.fromkeys([*memory.summary_refs, *[i.interaction_id for i in removed]]))
+        # 折叠旧交互时摘要只吸收可观察事实；近期交互继续原样回传协议推理字段。
+        old_interactions = [i.model_dump(mode="json") for i in removed]
+        for interaction in old_interactions:
+            interaction["assistant_message"].pop("reasoning_content", None)
         source = json.dumps({"previous_summary": memory.summary,
-                             "interactions": [i.model_dump(mode="json") for i in removed]}, ensure_ascii=False)
+                             "interactions": old_interactions}, ensure_ascii=False)
         summary = self.engine.summarize(task=task, source=source, refs=refs, scope=scope + "/local")
         if summary is None:
             return LocalCompressionResult(memory, False)

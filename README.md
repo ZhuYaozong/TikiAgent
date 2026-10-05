@@ -114,10 +114,11 @@ Copy-Item .env.example .env
 ```dotenv
 TIKI_LLM_API_KEY=your-model-api-key
 TIKI_LLM_BASE_URL=https://api.deepseek.com
-TIKI_LLM_MODEL=deepseek-chat
+TIKI_LLM_MODEL=deepseek-flash
+TIKI_LLM_API_STYLE=deepseek
 TIKI_LLM_TIMEOUT_SECONDS=60
 TIKI_LLM_MAX_RETRIES=1
-TIKI_LLM_CONTEXT_LIMIT=32000
+TIKI_LLM_CONTEXT_LIMIT=131072
 TIKI_LLM_MAX_OUTPUT_TOKENS=2000
 
 TIKI_SEARCH_PROVIDER=tavily
@@ -129,7 +130,9 @@ TIKI_TAVILY_BASE_URL=https://api.tavily.com
 
 模型请求默认超时为 60 秒、最多重试 1 次，可用以上两个可选配置调整。模型服务的 `insufficient_quota` 错误需要在服务控制台处理额度；修改项目步数不会解决配额不足。
 
-`TIKI_LLM_CONTEXT_LIMIT` 和 `TIKI_LLM_MAX_OUTPUT_TOKENS` 分别配置模型总窗口和输出预留；请按实际后端能力设置。上下文接近预算时会额外调用模型总结旧历史或旧交互，原始任务约束与 TaskBoard 不参与摘要。摘要失败不会覆盖旧消息，仍超限时明确停止。
+`TIKI_LLM_CONTEXT_LIMIT` 是应用主动使用的总窗口，不是供应商最大能力。正式应用通过 `TIKI_OUTPUT_<STAGE>` 分阶段预留输出；`TIKI_LLM_MAX_OUTPUT_TOKENS` 只作为未分阶段客户端的默认值。上下文接近预算时会额外调用模型总结旧历史或旧交互，原始任务约束与 TaskBoard 不参与摘要。摘要失败不会覆盖旧消息，仍超限时明确停止。
+
+DeepSeek 使用分阶段思考强度；`TIKI_LLM_API_STYLE=auto` 只自动识别官方 `api.deepseek.com`。连接 vLLM 或其他兼容接口时设置 `openai`，不发送 DeepSeek 专用参数。中转站只有明确支持这些参数时才使用 `deepseek`。
 
 Supervisor 通过 `update_plan`、`read_history`、`delegate_task`、`finish_task`、`stop_task` 编排任务，实际执行仍由 Graph、Specialist 和 Verification Gate 完成。每个 Todo 独立关联结果和验证，审批恢复会继续原来的待完成委派。详见 [Supervisor 与上下文设计](docs/supervisor-context.md)。
 
@@ -303,20 +306,22 @@ TUI 中输入 `/paths` 可在本地查看当前 Session 的 Workspace、History/
 
 ### 阶段预算与无进展控制
 
-默认应用窗口为 32,000 token，额外保留 2,000 token 安全余量。输入估算包含消息和工具定义；工作与收尾使用不同输出额度，Context Monitor 与模型请求使用相同配置。
+默认应用窗口为 131,072 token，额外保留 2,000 token 安全余量。输入估算包含消息、保留的思考字段和工具定义；工作与收尾使用不同输出额度，Context Monitor 与模型请求使用相同配置。输出上限是最大预留，不是每次必然消耗量。
 
 | Agent | 工作轮数 / 工具上限 | 工作输出 / 收尾输出 token |
 |---|---|---|
-| Supervisor | 任务内 12 轮 / 20 次编排调用 | 3,072 / 3,072 |
-| ResearchAgent | 每次 4 轮 / 2 次搜索 + 2 次提取 | 2,048 / 4,096 |
-| CodeAgent | 每次 12 轮 / 24 次工具 | 8,192 / 3,072 |
-| Verifier | 每次 4 轮 / 6 次证据工具 | 2,048 / 4,096 |
+| Supervisor | 任务内 20 轮 / 32 次编排调用 | 16,384 / 16,384 |
+| ResearchAgent | 每次 10 轮 / 4 次搜索 + 6 次提取 | 16,384 / 16,384 |
+| CodeAgent | 每次 16 轮 / 32 次工具 | 32,768 / 16,384 |
+| Verifier | 每次 6 轮 / 10 次证据工具 | 16,384 / 16,384 |
 
-任务默认最多 5 次委派、48 次 Code 工具、6 次联网请求、64 次模型请求（包含路由、压缩和实际重试），其中 16 次模型请求保留给收尾。每个执行身份仍只允许一次收尾，不因尚有总额度就反复总结。同一 Todo 最多尝试两次，重新委派必须明确缺失证据、策略变化和预期证据。
+任务默认最多 5 次委派、64 次 Code 工具、20 次联网请求、128 次模型请求（包含路由、压缩和实际重试），其中 16 次模型请求保留给收尾。每个执行身份仍只允许一次收尾，不因尚有总额度就反复总结。同一 Todo 最多尝试两次，重新委派必须明确缺失证据、策略变化和预期证据。恢复旧任务不会刷新已冻结额度。
+
+Base/Local 软压缩阈值为 32,000/48,000 token，Local 优先保留最近 8 组完整交互，并按 16,000 token 近期预算缩小组数；至少保留一组，不能拆开 ToolCall/ToolResult。完整输入达到可用预算 85% 时提前尝试压缩。任务、系统规则、TaskBoard 和受保护 Handoff 不交给摘要器改写。
 
 Research 收尾只生成有界结论与来源 ID，再由程序补入真实 Observation 中的 URL 和标题，不复制整篇网页。结果整理失败与工具预算耗尽分别诊断；不能因整理失败再次搜索。已经完成整理、具有证据的部分研究成果仍进入 Verifier，Supervisor 根据审核意见判断是否接受或带限制交付。
 
-全部预算可通过 `.env.example` 中的 `TIKI_OUTPUT_*`、`TIKI_BUDGET_*` 配置。更换模型时应同时检查真实窗口、输出能力和成本，而不是只提高循环次数。详见 [执行预算与进展策略](docs/execution-policy.md)。
+全部预算可通过 `.env.example` 中的 `TIKI_OUTPUT_*`、`TIKI_BUDGET_*`、`TIKI_CONTEXT_*`、`TIKI_THINKING_*` 配置。更换模型时应同时检查真实窗口、输出能力和成本，而不是只提高循环次数。详见 [执行预算与进展策略](docs/execution-policy.md)。
 
 真实 API Demo 会产生费用和外部请求，不属于默认测试套件。
 

@@ -90,6 +90,8 @@ class WorkingMemory(ContextModel):
     session_id: str = ""
     history_summary_refs: list[str] = Field(default_factory=list)
     compression_calls: int = Field(default=0, ge=0)
+    # 机械预算由运行时提供；不是历史数据，不参与摘要替换。
+    runtime_budget: dict[str, Any] = Field(default_factory=dict)
 
 
 class BaseContext(ContextModel):
@@ -136,6 +138,7 @@ class BaseContext(ContextModel):
                 "相关历史：" + json.dumps(history, ensure_ascii=False),
                 "准确控制事实（摘要不得覆盖）：" + json.dumps(memory.control_facts, ensure_ascii=False),
                 "当前准确 Task Board（摘要不得覆盖）：" + json.dumps(todos, ensure_ascii=False),
+                "当前执行额度（不能通过重复调用刷新）：" + json.dumps(memory.runtime_budget, ensure_ascii=False),
             ]
         )
 

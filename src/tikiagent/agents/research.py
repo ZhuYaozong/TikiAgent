@@ -138,6 +138,10 @@ class ResearchAgent:
                 stop_reason = "tool_budget_exhausted"
                 break
             try:
+                context = context.model_copy(update={"working_memory": context.working_memory.model_copy(update={
+                    "runtime_budget": {"remaining_rounds": self.max_steps - _step,
+                        "remaining_tools": {name: max(0, limit - tool_counts[name]) for name, limit in self.tool_limits.items()},
+                        "finalization": False, "instruction": "优先取得缺失证据；足够就停止搜索并总结。"}})})
                 prepared = self.context_runtime.prepare(
                     base_context=context,
                     local_memory=local.memory,
