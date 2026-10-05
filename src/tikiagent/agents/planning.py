@@ -339,7 +339,12 @@ class PlanningSupervisorAgent:
             invalid_batch = len(calls) > 1 and any(c.name in CONTROL_TOOLS for c in calls)
             for call in calls:
                 runtime["tool_calls"] = runtime.get("tool_calls", 0) + 1
-                self._emit("tool_call_requested", state, call.tool_call_id, {"tool_name": call.name})
+                try:
+                    display_arguments = json.loads(call.arguments_json)
+                except ValueError:
+                    display_arguments = {"invalid_json": call.arguments_json}
+                self._emit("tool_call_requested", state, call.tool_call_id,
+                           {"tool_name": call.name, "arguments": display_arguments})
                 try:
                     if invalid_batch:
                         fail("control_call_must_be_single", "委派和结束操作必须独立调用，本批次未执行")
@@ -444,4 +449,8 @@ class PlanningSupervisorAgent:
 
     def _emit(self, event_type, state, correlation_id=None, data=None):
         if self.observer:
-            self.observer(event_type, state, correlation_id or state["task_id"], data or {})
+            payload = data or {}
+            # Review 的完整身份契约保持不变，仅工具事件补充执行主体。
+            if event_type.startswith("tool_"):
+                payload = {"agent": "supervisor", **payload}
+            self.observer(event_type, state, correlation_id or state["task_id"], payload)

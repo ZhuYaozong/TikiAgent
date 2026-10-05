@@ -30,7 +30,7 @@ TikiAgent 使用 Supervisor 动态规划和委派任务，由 ResearchAgent 与 
 | Recovery semantics | Approval 暂停、Checkpoint Resume、未知副作用 Recovery/Reconcile |
 | OpenAI-compatible backend | 可连接 DeepSeek 官方 API 或本地 vLLM OpenAI-compatible endpoint |
 | Web research | Tavily Search/Extract，保留可追溯 Web Observation 和来源 URL |
-| Application interfaces | CLI、Event Stream、三类冻结 Demo 与 Textual 交互终端 |
+| Application interfaces | CLI、Event Stream、三类冻结 Demo 与 Textual 交互终端；工具卡片原地更新、只读任务进度与逐项审核详情 |
 
 ## Architecture
 

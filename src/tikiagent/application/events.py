@@ -13,6 +13,7 @@ from tikiagent.application.models import (
     ApplicationEventType,
     EventScope,
 )
+from tikiagent.application.approval_details import safe_display_text, safe_display_command
 
 
 _REDACTED = "[REDACTED]"
@@ -86,7 +87,7 @@ class EventBus:
             source=source,
             correlation_id=correlation_id,
             causation_id=causation_id,
-            message=_bound(message, self.max_text_length),
+            message=_bound(safe_display_text(message), self.max_text_length),
             data=_sanitize(data or {}, self.max_text_length),
         )
         for sink in tuple(self._sinks):
@@ -150,14 +151,30 @@ def _sanitize(value: Any, limit: int, key: str | None = None) -> Any:
     if key is not None and _is_secret(key):
         return _REDACTED
     if isinstance(value, dict):
+        if key == "output":
+            # 原始长度在截断前计算，避免把预览长度误报为文件大小或匹配总数。
+            value = dict(value)
+            if any(isinstance(item, str) and len(item) > limit for item in value.values()):
+                value["display_truncated"] = True
+            if isinstance(value.get("content"), str):
+                value["content_characters"] = len(value["content"])
+            for field in ("files", "matches", "results"):
+                if isinstance(value.get(field), list):
+                    value[field + "_count"] = len(value[field])
+                    if len(value[field]) > 50:
+                        value["display_truncated"] = True
         return {
             str(item_key): _sanitize(item, limit, str(item_key))
             for item_key, item in value.items()
         }
     if isinstance(value, (list, tuple)):
-        return [_sanitize(item, limit) for item in value]
+        if key == "command":
+            value = safe_display_command(value)
+        # 列表和文本都设显示上限；Trace/Checkpoint 原始执行语义不受影响。
+        items = [_sanitize(item, limit) for item in value[:50]]
+        return items
     if isinstance(value, str):
-        return _bound(value, limit)
+        return _bound(safe_display_text(value), limit)
     return deepcopy(value)
 
 

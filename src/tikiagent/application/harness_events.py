@@ -29,6 +29,8 @@ class HarnessEventForwarder:
             return
         checkpoint = event.checkpoint
         data = dict(event.details or {})
+        data["tool_name"] = event.tool_name
+        data["agent"] = checkpoint.agent if checkpoint is not None else "code_agent"
         if checkpoint is not None:
             data.update(
                 {

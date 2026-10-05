@@ -77,6 +77,7 @@ class ResearchAgent:
         execution_harness: ExecutionHarness | None = None,
         finalizations=None,
         request_budget=None,
+        observer=None,
     ) -> None:
         for name, value in {
             "max_steps": max_steps,
@@ -94,6 +95,7 @@ class ResearchAgent:
         self.supports_harness = execution_harness is not None
         self.finalizations = finalizations or FinalizationLedger()
         self.request_budget = request_budget
+        self.observer = observer
         self.tool_limits = {
             "web_search": max_searches,
             "web_extract": max_extracts,
@@ -133,6 +135,13 @@ class ResearchAgent:
         no_new_sources = 0
         known_urls = set()
 
+        def emit(event_type, call, data):
+            # 仅发布实际请求/执行/结果；内部推理和 LocalMemory 不进入显示事件。
+            if self.observer is not None:
+                self.observer(event_type, {"task_id": context.working_memory.task_id,
+                    "run_id": handoff.handoff_id}, call.tool_call_id,
+                    {"agent": "research_agent", "tool_name": call.name, **data})
+
         for _step in range(1, self.max_steps + 1):
             if available and all(tool_counts[name] >= self.tool_limits[name] for name in available):
                 stop_reason = "tool_budget_exhausted"
@@ -167,6 +176,11 @@ class ResearchAgent:
 
             tool_messages: list[dict[str, Any]] = []
             for call in response.tool_calls:
+                try:
+                    display_arguments = json.loads(call.arguments_json)
+                except ValueError:
+                    display_arguments = {"invalid_json": call.arguments_json}
+                emit("tool_call_requested", call, {"arguments": display_arguments})
                 key = ToolLoopGuard.fingerprint(call.name, call.arguments_json)
                 if call.name in tool_counts:
                     tool_counts[call.name] += 1
@@ -194,7 +208,8 @@ class ResearchAgent:
                             self.request_budget.web_request(key)
                         seen_web.add(key)
                         result = self._dispatch(call.tool_call_id, call.name, call.arguments_json,
-                            execution_context=execution_context, exposed_tools=prepared.tool_view.exposed_names)
+                            execution_context=execution_context, exposed_tools=prepared.tool_view.exposed_names,
+                            before_execute=lambda _validated, call=call: emit("tool_execution_started", call, {}))
                     except RequestBudgetExceeded:
                         stop_reason = "task_web_budget_or_duplicate"
                         result = ToolResult(tool_call_id=call.tool_call_id, tool_name=call.name, ok=False,
@@ -203,6 +218,7 @@ class ResearchAgent:
                     urls = {x.get("url") for x in result.output.get("results", []) if isinstance(x, dict)}
                     no_new_sources = 0 if urls - known_urls else no_new_sources + 1
                     known_urls |= urls
+                emit("tool_result_received", call, {"tool_result": result.model_dump(mode="json")})
                 tool_results.append(result)
                 tool_messages.append(
                     {
@@ -312,6 +328,7 @@ class ResearchAgent:
         *,
         execution_context: ExecutionContext | None,
         exposed_tools: set[str],
+        before_execute=None,
     ) -> ToolResult:
         try:
             arguments = json.loads(arguments_json)
@@ -338,6 +355,7 @@ class ResearchAgent:
                 context=execution_context.model_copy(
                     update={"exposed_tools": exposed_tools}
                 ),
+                before_execute=before_execute,
             )
             if outcome.status == "awaiting_approval":
                 return ToolResult(
@@ -351,7 +369,13 @@ class ResearchAgent:
                 )
             assert outcome.tool_result is not None
             return outcome.tool_result
-        return self.dispatcher.dispatch(raw_call)
+        # 教学兼容入口也只在参数校验成功后发布开始事件。
+        prepared = self.dispatcher.prepare(raw_call)
+        if isinstance(prepared, ToolResult):
+            return prepared
+        if before_execute is not None:
+            before_execute(prepared)
+        return self.dispatcher.execute(prepared)
 
     def _budget_error(self, tool_call_id: str, name: str) -> ToolResult:
         limit = self.tool_limits[name]
