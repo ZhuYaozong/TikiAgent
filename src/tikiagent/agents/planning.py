@@ -14,7 +14,7 @@ from tikiagent.runtime.react import ReActAgent
 from tikiagent.context.memory.models import HistoryRecord
 from tikiagent.context.task_board import record_review
 from tikiagent.context.preparation import ContextRuntime
-from tikiagent.context.projections import verification_view
+from tikiagent.context.projections import verification_view, research_view
 from tikiagent.harness.execution import ExecutionHarness
 from tikiagent.harness.permissions.policy import RuleBasedPermissionPolicy
 from tikiagent.harness.scope import ExecutionContext, ExecutionScope
@@ -333,6 +333,7 @@ class PlanningSupervisorAgent:
                 request=ContextRequest(agent="supervisor", task_id=state["task_id"], session_id=state["session_id"],
                                        phase="orchestration", instruction="观察最新事实；待验收 Todo 先 review_result，自主决定接受、带限制接受、补做或停止。\n" + capability_prompt(available_agents), context_refs=refs),
                 task=state["task"], acceptance_criteria=working["acceptance_criteria"], task_board=working["task_board"],
+                task_reference_time=state.get("task_reference_time"),
             )
             try:
                 context = context.model_copy(update={"working_memory": context.working_memory.model_copy(update={
@@ -416,7 +417,8 @@ class PlanningSupervisorAgent:
                     request = ContextRequest(agent="supervisor", task_id=state["task_id"], session_id=state["session_id"],
                         phase="orchestration", instruction=f"规划进入最终收尾，原因：{reason}。仅允许单独调用 finish_task 或 stop_task 总结已有事实，不得委派或修改计划；没有接受决定的 Todo 不能声称完成。", context_refs=refs if 'refs' in locals() else [])
                     context = context_builder.build(request=request, task=state["task"],
-                        acceptance_criteria=working["acceptance_criteria"], task_board=working["task_board"])
+                        acceptance_criteria=working["acceptance_criteria"], task_board=working["task_board"],
+                        task_reference_time=state.get("task_reference_time"))
                     context = context.model_copy(update={"working_memory": context.working_memory.model_copy(update={
                         "runtime_budget": {"remaining_rounds": 0, "remaining_tool_calls": 0,
                             "finalization": True, "instruction": "只允许 finish_task/stop_task，一次提交，不再委派。"}})})
@@ -460,6 +462,10 @@ class PlanningSupervisorAgent:
                                  output={"todo_id": handoff.todo_id, "handoff_id": handoff.handoff_id,
                                          "result_id": result["result_id"], "summary": result.get("summary", "")[:2000],
                                          "verification": verification_view(report.model_dump(mode="json"))})
+        if handoff.to_agent == "research_agent":
+            # 不只传一句摘要；规划器必须看见实际交付和未完成原因。
+            observation = observation.model_copy(update={"output": {
+                **observation.output, "research": research_view(result)}})
         local.append(interaction_id=f"delegation-{handoff.handoff_id}", assistant_message=pending["assistant_message"],
                      tool_messages=[{"role": "tool", "tool_call_id": pending["tool_call_id"], "content": observation.model_dump_json()}])
         runtime.update(pending=None, local_memory=local.memory.model_dump(mode="json"))

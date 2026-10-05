@@ -2,6 +2,7 @@
 
 from typing import Annotated, Any, Literal, NotRequired, TypedDict
 from uuid import uuid4
+from datetime import datetime
 
 from pydantic import TypeAdapter
 
@@ -103,6 +104,7 @@ class TikiState(TypedDict):
     session_id: str
     # 应用层显式选择、允许当前 Task 复用的同 Session History 引用。
     session_context_refs: list[str]
+    task_reference_time: NotRequired[str | None]
 
     # Current Agent working messages
     messages: Annotated[list[MessagePayload], append_messages]
@@ -181,6 +183,8 @@ def restore_tiki_state(payload: dict[str, Any]) -> TikiState:
     # v0.6a2 Checkpoint 尚无该字段；迁移时只补空引用，不猜测历史。
     migrated = {
         "session_context_refs": [],
+        # 旧任务时间未知，不用恢复时的时间伪造原任务日期。
+        "task_reference_time": None,
         "code_tool_call_count": 0,
         "max_code_tool_calls": 60,
         "supervisor_runtime": {},
@@ -224,6 +228,7 @@ def create_initial_state(
     return {
         "task_id": task_id or str(uuid4()),
         "task": task,
+        "task_reference_time": datetime.now().astimezone().isoformat(),
         "session_id": session_id or str(uuid4()),
         "session_context_refs": list(dict.fromkeys(session_context_refs or [])),
         "messages": [
@@ -289,6 +294,7 @@ def create_plan_verify_state(
         "task_id": task_id or str(uuid4()),
         "task": task,
         "session_id": session_id or str(uuid4()),
+        "task_reference_time": datetime.now().astimezone().isoformat(),
         "session_context_refs": list(dict.fromkeys(session_context_refs or [])),
         "messages": [],
         "pending_tool_calls": [],

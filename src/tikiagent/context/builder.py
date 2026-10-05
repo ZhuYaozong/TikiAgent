@@ -40,12 +40,19 @@ class ContextBuilder:
         task: str,
         acceptance_criteria: list[str],
         task_board: TaskBoard,
+        task_reference_time: str | None = None,
     ) -> BaseContext:
         profile = self.profiles[request.agent]
         history = [self._history_view(record) for record in self.retriever.retrieve(request, profile)]
 
         if profile.include_global_task_board:
             todos = list(task_board.items.values())
+        elif request.current_todo_id is not None:
+            # 正式委派只注入当前 Todo；无 ID 的旧教学接口保留 owner 视图。
+            todo = task_board.items.get(request.current_todo_id)
+            if todo is None or (request.agent != "verifier" and todo.owner != request.agent):
+                raise ValueError("当前 Todo 与 Agent 作用域不匹配")
+            todos = [todo]
         elif request.agent == "verifier":
             todos = todos_for_refs(task_board, request.context_refs)
         else:
@@ -84,7 +91,12 @@ class ContextBuilder:
                 session_id=request.session_id,
                 phase=request.phase,
                 instruction=request.instruction,
-                acceptance_criteria=acceptance_criteria,
+                acceptance_criteria=(
+                    [criterion.description for todo in todos for criterion in todo.acceptance_criteria]
+                    if request.current_todo_id is not None else acceptance_criteria
+                ),
+                background_acceptance_criteria=acceptance_criteria if request.current_todo_id is not None else [],
+                task_reference_time=task_reference_time,
                 todos=todos,
                 relevant_history=history,
                 relevant_notepad=relevant_notepad,

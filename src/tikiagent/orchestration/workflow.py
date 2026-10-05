@@ -321,9 +321,10 @@ class MultiAgentWorkflow:
                     agent="research_agent",
                     exposed_tools=set(),
                 ),
+                **self._research_history_arguments(state, handoff),
             )
         else:
-            result = self.research_agent.run(handoff, base_context)
+            result = self.research_agent.run(handoff, base_context, **self._research_history_arguments(state, handoff))
         completed = handoff.model_copy(
             update={"result_id": result.result_id, "status": "completed"}
         )
@@ -355,6 +356,18 @@ class MultiAgentWorkflow:
             "status": "validating",
             "recent_events": ["research_agent: result"],
         }
+
+    def _research_history_arguments(self, state, handoff):
+        """原始证据独立于软检索窗口；模型声明或 Trace 不参与授权。"""
+        if not getattr(self.research_agent, "supports_history_evidence", False):
+            return {}
+        records = []
+        for ref in handoff.context_refs:
+            record = self.history_store.get_by_id(ref)
+            if (record is not None and record.session_id == state["session_id"]
+                    and (record.task_id == state["task_id"] or ref in state["session_context_refs"])):
+                records.append(record)
+        return {"history_records": records}
 
     def _code_node(self, state: TikiState) -> dict[str, Any]:
         handoff = self._require_pending_handoff(state, "code_agent")
@@ -558,14 +571,16 @@ class MultiAgentWorkflow:
                 context_refs=[handoff.handoff_id, raw_result["result_id"], *handoff.context_refs],
                 keywords=[handoff.instruction],
             )
-        if (getattr(self.verification_gate, "supports_related_results", False)
-                and getattr(self.supervisor, "supports_tool_loop", False)):
+        if getattr(self.verification_gate, "supports_related_results", False):
             # 多 Todo 下来源属于本次委派，不能误用同一 Agent 后来的另一份结果。
             verification_arguments["research_results"] = [
                 record.payload for ref in handoff.context_refs
                 if (record := self.history_store.get_by_id(ref)) is not None
                 and record.record_type == "result" and record.producer == "research_agent"
                 and record.session_id == state["session_id"]
+                and (record.task_id == state["task_id"] or ref in state["session_context_refs"])
+                and record.payload.get("result_id") == record.record_id
+                and record.payload.get("handoff_id") in record.refs
             ]
         if getattr(self.verification_gate, "supports_harness", False):
             verification_arguments["execution_context"] = ExecutionContext(
@@ -769,10 +784,13 @@ class MultiAgentWorkflow:
                 instruction=instruction,
                 context_refs=list(dict.fromkeys(context_refs)),
                 keywords=keywords or [],
+                current_todo_id=(state["latest_handoff"].todo_id
+                    if agent != "supervisor" and state["latest_handoff"] is not None else None),
             ),
             task=state["task"],
             acceptance_criteria=state["acceptance_criteria"],
             task_board=state["task_board"],
+            task_reference_time=state.get("task_reference_time"),
         )
 
     def _write_history(

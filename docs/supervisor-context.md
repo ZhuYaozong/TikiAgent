@@ -42,6 +42,8 @@ Tool Schema 通过 API `tools` 参数发送，仍计入上下文预算。消息�
 
 作用域切换时重新构建 Base Context。Supervisor 的 LocalMemory 属于当前 Workflow；Specialist 的 LocalMemory 属于当前一次委派。
 
+正式 Specialist/Verifier 输入只包含当前 `current_todo_id` 的 Todo 和验收项，全局任务及全局标准另标背景；不把同一 Agent 的其他 Todo 作为当前交付。新任务的 `task_reference_time` 含时区，进入 Workflow/ReAct Snapshot，恢复不刷新；旧值缺失时明确未知。Research 回传还包含逐条来源引用、证据类型、交付状态和未完成原因。详见 [研究委派与证据链](research-evidence.md)。
+
 ## 两层摘要
 
 History 压缩器处理较早的非保护记录，默认保留最近一条软性记录以及全部受保护引用。正式应用 Local 压缩器处理旧完整交互，优先保留最近八组，并按 16,000 token 近期预算缩小组数，至少留下最近一组。调用和对应全部返回值不能拆开。

@@ -116,6 +116,7 @@ class VerifierAgent:
         instruction = json.dumps({"instruction": handoff.instruction, "todo_id": handoff.todo_id,
             "handoff_id": handoff.handoff_id, "result_id": result.result_id,
             "criteria": [c.model_dump() for c in handoff.acceptance_criteria], "claim_excerpt": result.summary[:2000],
+            "finding_citations": [c.model_dump() for c in result.finding_citations] if isinstance(result, ResearchResult) else [],
             "evidence_ids": list(records)}, ensure_ascii=False)
         context = context.model_copy(update={"working_memory": context.working_memory.model_copy(update={"instruction": instruction})})
         local = LocalMemoryManager()

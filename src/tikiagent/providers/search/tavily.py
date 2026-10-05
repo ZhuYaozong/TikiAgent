@@ -125,6 +125,9 @@ class TavilyProvider:
             "truncated": len(content) > content_limit,
             "original_characters": len(content),
             "request_id": data.get("request_id"),
+            # 只透传实际返回的元数据，不根据 URL 推测标题或日期。
+            "title": first.get("title") if isinstance(first.get("title"), str) else None,
+            "published_date": first.get("published_date") if isinstance(first.get("published_date"), str) else None,
         }
 
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:

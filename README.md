@@ -29,7 +29,7 @@ TikiAgent 使用 Supervisor 动态规划和委派任务，由 ResearchAgent 与 
 | Execution harness | Tool Exposure、Permission、Approval、Workspace、Timeout、Checkpoint 与 Trace |
 | Recovery semantics | Approval 暂停、Checkpoint Resume、未知副作用 Recovery/Reconcile |
 | OpenAI-compatible backend | 可连接 DeepSeek 官方 API 或本地 vLLM OpenAI-compatible endpoint |
-| Web research | Tavily Search/Extract，保留可追溯 Web Observation 和来源 URL |
+| Web research | Tavily Search/Extract、显式授权历史复用，保留逐条结论引用、来源日期与证据类型 |
 | Application interfaces | CLI、Event Stream、三类冻结 Demo 与 Textual 交互终端；工具卡片原地更新、只读任务进度与逐项审核详情 |
 
 ## Architecture
@@ -84,6 +84,10 @@ Supervisor FINISH / RETRY / DELEGATE
 ### Verification & Capabilities
 
 ResearchAgent 仅使用 Tavily 搜索与提取网页；本地文件、Python 环境和依赖任务交给 CodeAgent。Supervisor 为每个 Todo 声明所需能力和逐项验收条件，委派后不能通过删除标准绕过失败。
+
+ResearchAgent 可以直接提取已知文章，无须先重复搜索，也能复用 Supervisor 显式引用、Application 已授权的同 Session 调研结果。搜索摘录、实际提取的正文和历史来源分别标记；每条结论使用 `source_id` 对应真实来源，最终回答显示引用关系。`published_date` 只保留工具返回的字段，缺失时保持未知；正文中的日期作为原文证据保留，不从 URL 推断。Tavily 并非全网热度排名服务，无法满足的日期、数量或排名要求应明确披露，不能虚构完成。
+
+正式委派的 Specialist 和 Verifier 只接收当前 Todo 与其冻结验收项，全局目标仅作为背景，Supervisor 保留全局 TaskBoard。新任务的参考时间包含时区，随已有 Checkpoint 保存；恢复不替换为当天日期，旧任务未保存的时间保持未知。证据目录、引用和历史授权边界详见 [研究委派与证据链](docs/research-evidence.md)。
 
 常规搜索、只读调查、依赖安装和简单文件创建默认采用 `basic`：Gate 不调用 LLM、不运行额外命令，只检查结果身份、来源追溯、实际产物及 Workspace 边界。复杂任务采用 `independent`：跨任务代码交付、同时写入文件与执行命令的复合代码 Todo 会自动升级；其他需要独立审查的任务由 Supervisor 在规划时明确选择并给出理由。审核级别在委派后冻结，随 Todo/Handoff/Checkpoint 保存；缺少新字段的旧快照保留独立审核要求，不静默降级。
 

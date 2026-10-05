@@ -8,6 +8,7 @@ from tikiagent.verification.failures import execution_failure, failure_report
 from tikiagent.providers.llm.openai_compatible import ModelOutputError
 from tikiagent.context.preparation import ContextBudgetExceeded
 from tikiagent.verification.research import ResearchResultVerifier
+from tikiagent.agents.research_evidence import provenance_valid
 from tikiagent.orchestration.contracts import (
     CodeResult,
     Handoff,
@@ -107,9 +108,26 @@ class VerificationGate:
         verifier = self.verifiers[handoff.to_agent]
         # 即使结果只交付了一部分，也不允许虚构来源在提前返回路径绕过身份边界。
         if isinstance(result, ResearchResult):
-            observation_urls = {(o.observation_id, url) for o in result.observations for url in o.urls}
-            if any((s.observation_id, s.url) not in observation_urls for s in result.sources):
-                return self._identity_failure(handoff, result.result_id, "source_observation_provenance: 来源不能追溯到真实搜索 Observation")
+            if not provenance_valid(result):
+                return self._identity_failure(handoff, result.result_id, "source_observation_provenance: 来源或逐条引用不能追溯到真实 Observation")
+            # 历史来源除本地配对外，还必须回查本次作用域内显式引用的原 Result。
+            originals = {}
+            for raw in research_results or []:
+                try:
+                    original = ResearchResult.model_validate(raw)
+                except ValueError:
+                    continue
+                if original.result_id in handoff.context_refs and provenance_valid(original):
+                    originals[original.result_id] = original
+            for observation in result.observations:
+                if observation.kind != "history":
+                    continue
+                original = originals.get(observation.history_record_id)
+                if original is None or not observation.original_observation_id or any(
+                    not any(s.observation_id == observation.original_observation_id and s.url == url for s in original.sources)
+                    for url in observation.urls
+                ):
+                    return self._identity_failure(handoff, result.result_id, "历史来源缺少显式授权的原始 Result 证据")
         basic = None
         if self.basic_verifier is not None:
             if not handoff.todo_id or not handoff.acceptance_criteria:
@@ -196,7 +214,7 @@ class VerificationGate:
             provenance = ResearchResultVerifier().verify(handoff=handoff, result=result, specialist_results={})
             if not provenance.passed:
                 report = report.model_copy(update={"passed": False, "failure_category": "insufficient_evidence",
-                    "retryable": False, "blocking_reason": "来源不能追溯到真实搜索 Observation",
+                    "retryable": False, "blocking_reason": "来源不能追溯到真实 Web 或授权历史 Observation",
                     "failures": provenance.failures})
         return self._with_basic(report, basic)
 

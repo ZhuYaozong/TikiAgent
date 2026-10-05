@@ -113,25 +113,33 @@ def _verified_result(
 def _research_sections(result: ResearchResult) -> list[str]:
     sections = ["## 调研总结", _shorten(result.summary.strip(), 1600)]
     if result.findings:
+        citations = {c.finding_index: c.source_ids for c in result.finding_citations}
+        source_numbers = {s.source_id: index + 1 for index, s in enumerate(result.sources[:12]) if s.source_id}
+        def finding_line(index, text):
+            refs = [str(source_numbers[ref]) for ref in citations.get(index, []) if ref in source_numbers]
+            return f"- {_shorten(text, 360)}" + (" [来源 " + ", ".join(refs) + "]" if refs else "")
         sections.extend(
             [
                 "## 关键发现",
                 "\n".join(
-                    f"- {_shorten(item, 360)}" for item in result.findings[:8]
+                    finding_line(index, item) for index, item in enumerate(result.findings[:8])
                 ),
             ]
         )
     if result.sources:
         source_lines: list[str] = []
         seen_urls: set[str] = set()
-        for source in result.sources[:10]:
+        for index, source in enumerate(result.sources[:12]):
             if source.url in seen_urls:
                 continue
             seen_urls.add(source.url)
             # 完整网页摘录属于 Research Evidence，不复制到最终回答与 Final History。
             source_lines.append(
-                f"- **{_shorten(source.title, 140)}** — "
+                f"- [{index + 1}] **{_shorten(source.title, 140)}** — "
                 f"<{_shorten(source.url, 500)}>"
+                + (f"（来源日期字段：{_shorten(source.published_date, 80)}）" if source.published_date else "（日期字段未知）")
+                + ("（已提取正文）" if source.evidence_kind == "extract" else
+                   "（历史来源）" if source.evidence_kind == "history" else "（搜索摘录，非全文）")
             )
         sections.extend(["## 来源", "\n".join(source_lines)])
     if result.unresolved_questions:

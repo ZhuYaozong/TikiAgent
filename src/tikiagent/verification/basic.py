@@ -5,6 +5,7 @@ import json
 from tikiagent.harness.workspace import Workspace
 from tikiagent.orchestration.contracts import CodeResult, ResearchResult, VerificationCheck, VerificationReport
 from tikiagent.tools.models import ToolExecutionError
+from tikiagent.agents.research_evidence import provenance_valid
 
 
 class BasicResultVerifier:
@@ -27,9 +28,8 @@ class BasicResultVerifier:
         check("delivery_present", result.delivery_status != "none",
               f"交付状态：{result.delivery_status or 'legacy'}" if result.delivery_status != "none" else "没有实际交付，不能接受为已完成")
         if isinstance(result, ResearchResult):
-            pairs = {(o.observation_id, url) for o in result.observations for url in o.urls}
-            check("source_provenance", all((s.observation_id, s.url) in pairs for s in result.sources),
-                  "来源必须关联真实搜索 Observation；此检查不证明网页内容正确")
+            check("source_provenance", provenance_valid(result),
+                  "来源及逐条引用必须关联真实搜索、提取或授权历史 Observation；此检查不证明网页内容正确")
             has_evidence = bool(result.findings and result.sources)
             check("research_evidence_present", has_evidence,
                   f"结论 {len(result.findings)} 条，来源 {len(result.sources)} 项" if has_evidence else "调研交付缺少结论或真实来源")
