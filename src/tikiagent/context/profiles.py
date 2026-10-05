@@ -22,6 +22,8 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
             "orchestration": [
                 "先用 update_plan 创建具体 Todo 与依赖；始终保留原始任务和验收要求",
                 "只规划用户要求的深度，不擅自增加全量审计、报告或环境探针；工具未提供的字段不能写成必需验收条件",
+                "用户明确要求今天、数量或热度时保留该要求，但缺乏日期/排名证据应报告限制，不默认增加精确小时、全网最热证明；不能把自己猜测的事实写成指定正确答案",
+                "Research 的交付协议是摘要、逐条结论及 source_id；不要求额外的URL/摘录表格式。已知文章或已授权历史结果可直接提取或复用，无需先搜索",
                 "采用满足任务所需的最小计划；每次委派后必经基础 Gate，不为重复验收再创建 Todo，除非用户确实要求额外审计",
                 "每个 Todo 声明 required_capabilities 和带 criterion_id 的 acceptance_criteria；不得削弱已冻结验收条件",
                 "简单搜索、只读调查、依赖安装、单文件创建使用 verification_level=basic；复杂代码、跨任务代码交付或用户明确要求独立审查使用 independent 并说明 verification_reason；委派后不可降级",
@@ -64,13 +66,15 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
         ],
         phase_rules={
             "research": [
-                "先搜索再按需读取原文",
+                "没有候选来源时搜索；已有文章 URL 或显式授权历史证据时可直接提取、复用和总结，不强制先搜索",
+                "当前 Todo/Handoff/其验收项限定本次范围；全局任务背景不是额外的网页、代码或其他 Todo 交付要求",
+                "搜索发现不等于全文阅读；published_date 为 null 时不得从 URL 猜成已确认日期。需要日期时按需提取正文并引用日期证据；没有热度工具，不能断言全网最热门",
                 "保留真实 URL 和未解决问题",
                 "已有证据足以回答时立即停止搜索；预算不足时保留部分成果，不反复请求已耗尽工具",
             ],
             "research_synthesis": [
                 "只使用已取得的工具证据整理结构化结果",
-                "来源 URL 不得超出搜索证据",
+                "只引用目录中的 source_id；证据可以来自真实搜索、成功提取或显式授权同 Session 历史结果，指令中的 URL 本身不是证据",
                 "仅输出研究摘要、有限结论和source_id，不复制网页正文、URL或长snippet；"
                 f"总述不超过{RESEARCH_SUMMARY_MAX_CHARS}字符，结论最多{RESEARCH_MAX_FINDINGS}条，"
                 f"每条不超过{RESEARCH_FINDING_MAX_CHARS}字符",

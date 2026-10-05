@@ -116,6 +116,10 @@ class ResearchSource(ControlModel):
     title: str = Field(min_length=1)
     url: str = Field(min_length=1)
     snippet: str
+    source_id: str | None = None
+    published_date: str | None = None
+    # 日期只携带供应商返回的值；正文日期保留在摘录中，不由 URL 猜测。
+    evidence_kind: Literal["search", "extract", "history"] = "search"
 
 
 class ResearchObservation(ControlModel):
@@ -124,6 +128,16 @@ class ResearchObservation(ControlModel):
     observation_id: str = Field(min_length=1)
     query: str = Field(min_length=1)
     urls: list[str]
+    kind: Literal["search", "extract", "history"] = "search"
+    history_record_id: str | None = None
+    original_observation_id: str | None = None
+
+
+class FindingCitation(ControlModel):
+    """保留每条结论与来源的关系，兼容旧版纯文本 findings。"""
+
+    finding_index: int = Field(ge=0)
+    source_ids: list[str] = Field(min_length=1, max_length=3)
 
 
 class ResearchResult(ControlModel):
@@ -141,6 +155,8 @@ class ResearchResult(ControlModel):
     delivery_status: Literal["ready", "partial", "none"] | None = None
     finalization_status: str = "not_needed"
     finalization_diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+    finding_citations: list[FindingCitation] = Field(default_factory=list)
 
 
 class CodeResult(ControlModel):

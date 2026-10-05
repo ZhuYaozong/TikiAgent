@@ -14,7 +14,7 @@ Supervisor 通过 `update_plan` 创建 Todo，包含 `required_capabilities`、`
 
 ResearchAgent 只有 Tavily Web 能力。CodeAgent 处理文件、命令和 Python 环境。`environment` 不暴露文件写工具，不强制交付报告；版本信息来自 `importlib.metadata`，不是不保证存在的包 `__version__`。
 
-条件触发独立审核时 Graph 构造 Verifier Base Context：原始任务、全局标准、当前 Todo/Handoff、当前 Result 和相关历史。不会继承 Specialist 内部 messages。Verifier 的短期取证消息经过同一个 ContextRuntime，预算与压缩仍生效；基础路径不创建该 Prompt。
+条件触发独立审核时 Graph 构造 Verifier Base Context：当前 Todo/Handoff 及冻结标准、当前 Result 和相关历史；原始任务及全局标准另标为背景。不会继承 Specialist 内部 messages。Verifier 的短期取证消息经过同一个 ContextRuntime，预算与压缩仍生效；基础路径不创建该 Prompt。
 
 Verifier 通过 `read_evidence` 查看结果附带证据，或通过文件、环境、测试工具独立取证；再单独调用 `submit_verification`。它不能写文件、安装包、调用任意命令、委派或结束任务。
 
@@ -53,7 +53,7 @@ Specialist Result → Gate 基础检查 → [条件独立 Verifier] → Todo.awa
 - 报告必须对应当前 Todo；独立审核的所有验收项恰好出现一次，基础路径不伪造 assessments。
 - 单项 passed 必须引用存在且可用的真实证据，不能只引用 Result 声明。未满足必需项可以明确带限制接受，但不能删除条件或宣称完整通过。
 - 命令非零退出、超时、验证工具明确 verified=false 不能作为成功证据。
-- Research 来源仍必须追溯到真实搜索 Observation；有来源不等于语义验收通过。
+- Research 来源必须追溯到真实搜索、成功正文提取或显式授权历史 Observation；逐条引用不能指向不存在的来源。历史来源须回查显式引用的原 Result；有来源不等于语义验收通过。
 - 没有实际交付、未形成交付的权限阻塞或硬性身份/证据错误不能接受；正式 artifact 模式还检查交付路径在 Workspace 内且文件实际存在。
 - FINISH 再次检查每个 Todo 的最新身份、报告、Supervisor 接受决定及限制，不再要求报告全部 PASS。
 

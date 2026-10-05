@@ -74,6 +74,7 @@ class ContextRequest(ContextModel):
     instruction: str = Field(min_length=1)
     context_refs: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
+    current_todo_id: str | None = None
 
 
 class WorkingMemory(ContextModel):
@@ -95,6 +96,8 @@ class WorkingMemory(ContextModel):
     compression_calls: int = Field(default=0, ge=0)
     # 机械预算由运行时提供；不是历史数据，不参与摘要替换。
     runtime_budget: dict[str, Any] = Field(default_factory=dict)
+    background_acceptance_criteria: list[str] = Field(default_factory=list)
+    task_reference_time: str | None = None
 
 
 class BaseContext(ContextModel):
@@ -130,7 +133,9 @@ class BaseContext(ContextModel):
         ]
         return "\n".join(
             [
-                f"任务：{memory.task}",
+                f"全局任务背景（不扩大当前委派范围）：{memory.task}",
+                f"任务创建时间（含时区，恢复时不变）：{memory.task_reference_time or '未知；不得推断今天的日期'}",
+                "全局验收背景（非当前 Todo 额外要求）：" + json.dumps(memory.background_acceptance_criteria, ensure_ascii=False),
                 f"阶段：{memory.phase}",
                 f"当前指令：{memory.instruction}",
                 "验收标准："

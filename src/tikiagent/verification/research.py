@@ -11,6 +11,7 @@ from tikiagent.orchestration.contracts import (
     VerificationReport,
 )
 from tikiagent.verification.reports import _linked_report
+from tikiagent.agents.research_evidence import provenance_valid
 
 
 class ResearchResultVerifier:
@@ -49,9 +50,9 @@ class ResearchResultVerifier:
                 evidence=f"findings={len(result.findings)}",
             ),
             VerificationCheck(
-                name="queries_present",
-                passed=bool(result.queries),
-                evidence=f"queries={result.queries}",
+                name="research_activity_present",
+                passed=bool(result.queries) or any(o.kind in {"extract", "history"} for o in result.observations),
+                evidence=f"queries={result.queries}; evidence_kinds={[o.kind for o in result.observations]}",
             ),
             VerificationCheck(
                 name="minimum_sources",
@@ -64,7 +65,7 @@ class ResearchResultVerifier:
             VerificationCheck(
                 name="source_observation_provenance",
                 passed=bool(result.sources)
-                and all(
+                and provenance_valid(result) and all(
                     (source.observation_id, source.url)
                     in observation_urls
                     for source in result.sources
