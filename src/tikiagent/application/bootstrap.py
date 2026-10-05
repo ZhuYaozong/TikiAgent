@@ -16,7 +16,7 @@ from tikiagent.context.preparation import ContextRuntime
 from tikiagent.context.profiles import DEFAULT_CONTEXT_PROFILES
 from tikiagent.harness.persistence.finalization import FinalizationLedger
 from tikiagent.harness.persistence.budget import RequestBudget
-from tikiagent.runtime.policy import AgentPolicy, output_limit, stage_for
+from tikiagent.runtime.policy import AgentPolicy, OUTPUT_LIMITS, output_limit, stage_for, thinking_effort
 from tikiagent.runtime.guard import workspace_revision
 from tikiagent.providers.llm.staged import StageModel
 from tikiagent.application.models import EventScope
@@ -65,7 +65,7 @@ CODE_SYSTEM_PROMPT = """你是 TikiAgent CodeAgent。
 Python 命令别名由 Runtime 绑定到项目解释器，不要用任意命令绕过文件工具。
 如果 Base Context 包含 ResearchResult，只使用其结构化事实与来源。
 不得访问 Workspace 外路径；完成后重新读取文件或运行测试。
-最终是否通过由独立 Verification Gate 决定。
+独立 Verifier 提供审核意见，最终是否完成由 Supervisor 决定。
 """
 
 
@@ -165,6 +165,13 @@ class ApplicationRuntimeFactory:
         self.checkpoints = JsonCheckpointStore(self.data_dir / "checkpoints")
         load_dotenv(env_file)
         self.policy = AgentPolicy.from_env()
+        # 启动即校验所有阶段，不等到付费请求时才发现输入/输出配置冲突。
+        self.context_limit = int(os.getenv("TIKI_LLM_CONTEXT_LIMIT", "131072"))
+        self.context_budget = ContextBudget.from_env(model_context_limit=self.context_limit - 2000,
+                                                    reserved_output_tokens=output_limit("summary"))
+        for stage in OUTPUT_LIMITS:
+            ContextBudget(model_context_limit=self.context_limit - 2000, reserved_output_tokens=output_limit(stage))
+            thinking_effort(stage)
         self.request_budget = RequestBudget(self.data_dir / "budgets", model_limit=self.policy.model_requests,
                                            web_limit=self.policy.task_web_tools)
 
@@ -198,8 +205,7 @@ class ApplicationRuntimeFactory:
     def _build_workflow(self, session_id: str, workspace_id: str) -> MultiAgentWorkflow:
         # 预算配置不要求密钥；保持本地 status/测试和依赖装配的惰性初始化。
         load_dotenv(self.env_file)
-        context_limit = int(os.getenv("TIKI_LLM_CONTEXT_LIMIT", "32000"))
-        output_tokens = int(os.getenv("TIKI_LLM_MAX_OUTPUT_TOKENS", "2000"))
+        context_limit = self.context_limit
         trace = JsonlTraceStore(self.data_dir / "traces" / f"{session_id}.jsonl")
 
         def observe(event_type, state, correlation_id, data):
@@ -228,11 +234,12 @@ class ApplicationRuntimeFactory:
                 profile = DEFAULT_CONTEXT_PROFILES["code_agent"]
                 profiles = {"code_agent": profile.model_copy(update={"system_rules": [CODE_SYSTEM_PROMPT.strip(), *profile.system_rules]})}
             return ContextRuntime(
-                budget=ContextBudget(model_context_limit=context_limit, reserved_output_tokens=output_tokens),
+                budget=self.context_budget,
                 profiles=profiles, base_compressor=LLMBaseCompressor(engine), local_compressor=LLMLocalCompressor(engine),
                 observer=context_observer,
-                budget_resolver=lambda agent, phase: ContextBudget(model_context_limit=context_limit - 2000,
-                    reserved_output_tokens=output_limit(stage_for(agent, phase))),
+                budget_resolver=lambda agent, phase: ContextBudget(**{
+                    **self.context_budget.model_dump(),
+                    "reserved_output_tokens": output_limit(stage_for(agent, phase))}),
             )
 
         def model(stage):

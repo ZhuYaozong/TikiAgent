@@ -26,7 +26,8 @@ _SECRET_MARKERS = (
     "token",
 )
 _TOKEN_METRICS = {"prompt_tokens", "base_tokens", "history_tokens", "notepad_tokens", "local_tokens",
-                  "tool_schema_tokens", "response_schema_tokens", "reserved_output_tokens", "completion_tokens", "total_tokens"}
+                  "tool_schema_tokens", "response_schema_tokens", "reserved_output_tokens", "completion_tokens", "total_tokens",
+                  "max_output_tokens", "reasoning_tokens", "cached_tokens", "prompt_cache_hit_tokens", "prompt_cache_miss_tokens"}
 
 
 class EventSink(Protocol):
@@ -138,9 +139,14 @@ class CliEventSink:
 
 
 def _sanitize(value: Any, limit: int, key: str | None = None) -> Any:
+    if key is not None and key.casefold() == "reasoning_content":
+        return _REDACTED
     # 只放行已知的数值统计，不放行 token/字符串凭据或任意 *_tokens 字段。
     if key in _TOKEN_METRICS and type(value) in (int, float):
         return value
+    # SDK 的嵌套计量容器只放行已知数字，不因字段名含 token 丢掉整组统计。
+    if key in {"completion_tokens_details", "prompt_tokens_details"} and isinstance(value, dict):
+        return {str(k): _sanitize(v, limit, str(k)) for k, v in value.items()}
     if key is not None and _is_secret(key):
         return _REDACTED
     if isinstance(value, dict):

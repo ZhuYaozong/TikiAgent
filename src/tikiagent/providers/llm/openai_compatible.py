@@ -47,6 +47,8 @@ class OpenAICompatibleClient:
         usage = getattr(response, "usage", None)
         data = {"finish_reason": getattr(choice, "finish_reason", None),
                 "max_output_tokens": self.settings.max_output_tokens,
+                "reasoning_effort": self.settings.reasoning_effort,
+                "available_input_budget": self.settings.context_limit - self.settings.max_output_tokens - self.settings.safety_margin,
                 "usage": usage.model_dump() if hasattr(usage, "model_dump") else {},
                 "tool_names": [c.function.name for c in (getattr(getattr(choice, "message", None), "tool_calls", None) or [])]}
         if self.observer:
@@ -91,6 +93,7 @@ class OpenAICompatibleClient:
                 model=self.settings.model, messages=request_messages,
                 **({"tools": self._convert_tools(tool_schemas), "tool_choice": "auto"} if tool_schemas else {}),
                 max_tokens=self.settings.max_output_tokens,
+                **self.settings.generation_options(),
             )
             response_details = self._observe(response)
             if not getattr(response, "choices", None):
@@ -156,6 +159,7 @@ class OpenAICompatibleClient:
                 model=self.settings.model,
                 messages=request_messages,
                 max_tokens=self.settings.max_output_tokens,
+                **self.settings.generation_options(),
             )
             details = self._observe(response)
             if not getattr(response, "choices", None):

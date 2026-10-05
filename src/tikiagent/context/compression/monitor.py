@@ -49,6 +49,7 @@ class ContextMonitor:
             "todos": [item.model_dump(mode="json") for item in memory.todos],
             "protected_refs": memory.protected_refs,
             "control_facts": memory.control_facts,
+            "runtime_budget": memory.runtime_budget,
         }
         history_payload = {
             "summary": memory.history_summary,

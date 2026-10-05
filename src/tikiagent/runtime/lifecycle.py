@@ -39,6 +39,8 @@ def summarize_run(model, runtime, context, local_memory, *, reason):
                                      DeliverySummary, lambda **kwargs: kwargs))
     memory = context.working_memory.model_copy(update={
         "phase": "finalization",
+        "runtime_budget": {**context.working_memory.runtime_budget, "finalization": True,
+                           "remaining_rounds": 0, "remaining_tool_calls": 0},
         "instruction": context.working_memory.instruction + "\n执行已停止：" + reason
         + "。禁止继续工作，仅根据已观察证据调用 submit_result，说明已完成、未完成及阻塞；无证据不得声称完成。",
     })

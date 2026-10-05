@@ -2,7 +2,7 @@
 from dataclasses import replace
 from types import SimpleNamespace
 from openai import APIConnectionError, APIStatusError
-from tikiagent.runtime.policy import output_limit
+from tikiagent.runtime.policy import output_limit, thinking_effort
 from tikiagent.providers.llm.openai_compatible import OpenAICompatibleClient
 
 
@@ -31,7 +31,8 @@ class StageModel:
                     if final or not transient or attempt >= original.settings.max_retries:
                         raise
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
-        settings = replace(original.settings, max_output_tokens=output_limit(self.stage), safety_margin=2000)
+        settings = replace(original.settings, max_output_tokens=output_limit(self.stage), safety_margin=2000,
+                           reasoning_effort=thinking_effort(self.stage) if original.settings.api_style == "deepseek" else None)
         def observe(data):
             if self.observer:
                 self.observer({"stage": self.stage, **data})

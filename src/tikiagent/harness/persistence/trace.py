@@ -23,6 +23,7 @@ _SECRET_KEYS = {
     "access_token",
     "refresh_token",
     "cookie",
+    "reasoning_content",
 }
 
 

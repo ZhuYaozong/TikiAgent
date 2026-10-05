@@ -198,11 +198,18 @@ class ResumableReActAgent(ReActAgent):
         guard: ToolLoopGuard | None = None,
     ) -> AgentRunOutcome:
         guard = guard or self._guard(workflow_snapshot, legacy_calls=len(tool_results))
-        for step in range(start_step, self.max_steps + 1):
+        # Workflow 快照冻结轮数，重启并调大配置不能给旧任务增加工作轮数。
+        max_steps = min(self.max_steps, workflow_snapshot.state.get("max_steps", self.max_steps))
+        for step in range(start_step, max_steps + 1):
             if guard.calls_used >= guard.max_calls:
                 return self._finalize(context, local, tool_results, context_usages, phases, step - 1,
                                       "tool_budget_exhausted", execution_context, run_id)
             try:
+                context = context.model_copy(update={"working_memory": context.working_memory.model_copy(update={
+                    "runtime_budget": {"remaining_rounds": max_steps - step,
+                        "remaining_tool_calls": max(0, guard.max_calls - guard.calls_used),
+                        "max_steps": max_steps, "finalization": False,
+                        "instruction": "权限阻塞不可绕过；复用未变化的检查，证据足够就提交。"}})})
                 prepared = self.context_runtime.prepare(
                     base_context=context,
                     local_memory=local.memory,
@@ -288,7 +295,7 @@ class ResumableReActAgent(ReActAgent):
                     phases=tuple(phases),
                 )
             raise RuntimeError("模型既没有返回 ToolCall，也没有最终文本")
-        return self._finalize(context, local, tool_results, context_usages, phases, self.max_steps,
+        return self._finalize(context, local, tool_results, context_usages, phases, max_steps,
                               "max_steps", execution_context, run_id)
 
     @staticmethod

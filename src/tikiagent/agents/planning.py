@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from tikiagent.context.memory.local import LocalMemoryManager
 from tikiagent.context.memory.models import LocalMemory
 from tikiagent.context.models import ContextRequest, TaskBoard, TodoItem
+from tikiagent.runtime.react import ReActAgent
 from tikiagent.context.memory.models import HistoryRecord
 from tikiagent.context.task_board import record_review
 from tikiagent.context.preparation import ContextRuntime
@@ -315,6 +316,10 @@ class PlanningSupervisorAgent:
                 task=state["task"], acceptance_criteria=working["acceptance_criteria"], task_board=working["task_board"],
             )
             try:
+                context = context.model_copy(update={"working_memory": context.working_memory.model_copy(update={
+                    "runtime_budget": {"remaining_rounds": runtime["max_steps"] - runtime["steps"],
+                        "remaining_tool_calls": max(0, runtime["max_tool_calls"] - runtime.get("tool_calls", 0)),
+                        "finalization": False, "instruction": "额度有限；优先复用现有事实，及时审阅并结束。"}})})
                 prepared = self.context_runtime.prepare(base_context=context, local_memory=local.memory, registry=registry)
                 local.replace(prepared.local_memory)
                 response = self.model.complete(messages=prepared.messages, tool_schemas=prepared.tool_view.schemas)
@@ -328,9 +333,8 @@ class PlanningSupervisorAgent:
             if not calls:
                 chosen = SupervisorDecision(action="stop", target_agent=None, instruction="", reason="Supervisor 未请求编排工具：" + (response.final_text or "无输出"))
                 break
-            assistant = {"role": "assistant", "content": response.final_text, "tool_calls": [
-                {"id": c.tool_call_id, "type": "function", "function": {"name": c.name, "arguments": c.arguments_json}} for c in calls
-            ]}
+            # 保留供应商完整 assistant 字段（包括 DeepSeek reasoning_content）。
+            assistant = ReActAgent._canonical_assistant_message(response)
             results = []
             invalid_batch = len(calls) > 1 and any(c.name in CONTROL_TOOLS for c in calls)
             for call in calls:
@@ -377,7 +381,9 @@ class PlanningSupervisorAgent:
                 break
         if chosen is None:
             identity = f"{state['session_id']}/{state['task_id']}/supervisor"
-            reason = runtime.get("force_finalization") or "Supervisor 达到规划步数或工具调用预算"
+            reason = runtime.get("force_finalization") or (
+                "Supervisor 工具调用预算耗尽" if runtime.get("tool_calls", 0) >= runtime["max_tool_calls"]
+                else "Supervisor 正常规划轮数耗尽")
             runtime["finalization_consumed"] = True
             if self.finalizations.claim(identity, reason):
                 outcome = "failed"
@@ -387,6 +393,9 @@ class PlanningSupervisorAgent:
                         phase="orchestration", instruction=f"规划进入最终收尾，原因：{reason}。仅允许单独调用 finish_task 或 stop_task 总结已有事实，不得委派或修改计划；没有接受决定的 Todo 不能声称完成。", context_refs=refs if 'refs' in locals() else [])
                     context = context_builder.build(request=request, task=state["task"],
                         acceptance_criteria=working["acceptance_criteria"], task_board=working["task_board"])
+                    context = context.model_copy(update={"working_memory": context.working_memory.model_copy(update={
+                        "runtime_budget": {"remaining_rounds": 0, "remaining_tool_calls": 0,
+                            "finalization": True, "instruction": "只允许 finish_task/stop_task，一次提交，不再委派。"}})})
                     final_registry = ToolRegistry()
                     for name in ("finish_task", "stop_task"):
                         final_registry.register(registry.get(name))

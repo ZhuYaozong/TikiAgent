@@ -63,7 +63,7 @@ def test_stage_output_limits_and_safe_diagnostics(tmp_path):
     model = StageModel(original, "code_agent", account=budget, observer=events.append)
     model.complete([], [])
     model.for_stage("code_final").complete_once([], [])
-    assert [r["max_tokens"] for r in requests] == [8192, 3072]
+    assert [r["max_tokens"] for r in requests] == [32768, 16384]
     assert [e["stage"] for e in events] == ["code_agent", "code_final"]
     assert "fake" not in json.dumps(events)
 
@@ -148,8 +148,8 @@ def test_context_and_api_reserve_same_output(tmp_path):
     runtime = workflow.code_agent.agent.context_runtime
     runtime.prepare(base_context=BaseContext(agent="code_agent", working_memory=WorkingMemory(task="test", phase="coding", instruction="test")),
         local_memory=LocalMemory(), registry=workflow.code_agent.agent.dispatcher.registry)
-    assert runtime.budget.reserved_output_tokens == 8192
-    assert runtime.budget.model_context_limit == 30000
+    assert runtime.budget.reserved_output_tokens == 32768
+    assert runtime.budget.model_context_limit == 129072
 
 
 def test_redelegation_requires_concrete_change_and_is_bounded():
