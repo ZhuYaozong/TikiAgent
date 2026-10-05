@@ -95,10 +95,14 @@ class VerifierAgent:
             expected = {c.criterion_id for c in handoff.acceptance_criteria}
             if not expected or len(checks) != len(expected) or {c.criterion_id for c in checks} != expected:
                 raise ToolExecutionError("acceptance_coverage", "必须逐项覆盖当前 Todo 的全部验收条件")
+            if any(c.status == "passed" and not c.evidence_refs for c in checks):
+                raise ToolExecutionError("missing_evidence_refs", "passed 必须填写结构化 evidence_refs；reason 中提及证据 ID 不能代替引用。请修正审核报告，不要重跑 Specialist")
             if any(ref not in records for c in checks for ref in c.evidence_refs):
                 raise ToolExecutionError("unknown_evidence", "禁止引用不存在的证据")
             if any(ref not in observed for c in checks for ref in c.evidence_refs):
                 raise ToolExecutionError("unread_evidence", "必须先读取引用证据，不能只根据 ID 猜测")
+            if any(c.status == "passed" and any(not records[ref]["usable"] for ref in c.evidence_refs) for c in checks):
+                raise ToolExecutionError("unusable_evidence", "失败、超时或不可用证据不能支持 passed；请如实提交 failed/insufficient_evidence，不要重复读取相同证据")
             submitted = checks, recommendation
             return {"submitted": True}
 
@@ -134,7 +138,8 @@ class VerifierAgent:
                 "remaining_evidence_calls": max(0, self.max_tool_calls - count),
                 "remaining_evidence_rounds": max(0, self.max_steps - step),
                 "observed_evidence": [{"evidence_id": ref, "usable": records[ref]["usable"]} for ref in sorted(observed)],
-                "instruction": "只根据已有证据单独提交报告，证据不足如实填写；同一证据可支持多条验收条件。" if finalizing else "证据足够就单独提交报告，避免重复取证。"}, ensure_ascii=False)
+                "instruction": ("只根据已有证据单独提交报告，证据不足如实填写；同一证据可支持多条验收条件。" if finalizing else
+                    "证据足够就单独提交报告，避免重复取证。") + "每条 passed 必须填写已读且可用的 evidence_refs，不能只在 reason 中写证据 ID。"}, ensure_ascii=False)
             context = context.model_copy(update={"working_memory": context.working_memory.model_copy(
                 update={"phase": stage, "instruction": instruction + "\n验证运行状态：" + budget_hint})})
             try:
@@ -156,11 +161,9 @@ class VerifierAgent:
                 count = self.max_tool_calls
                 continue
             except Exception as error:
-                # 最终一次请求失败也必须交回结构化结论，不能重试或伪造 PASS。
-                if not finalizing:
-                    raise
+                # 审核服务失败归属本轮审核，不向 Specialist 转嫁，也不伪造 PASS。
                 diagnosis = finalization_error(error)
-                reason = f"最终提交机会失败：{type(error).__name__}；尚未完成验收"
+                reason = f"独立审核请求失败：{type(error).__name__}；尚未完成验收"
                 self._emit("model_response", execution_context, handoff.handoff_id,
                            {"agent": "verifier", "stage": stage, **finalization_error(error)})
                 break
@@ -216,6 +219,9 @@ class VerifierAgent:
                     content = {"evidence_id": evidence_id, **observation.model_dump(mode="json")}
                 else:
                     content = observation.model_dump(mode="json")
+                if call.name == "submit_verification" and not observation.ok:
+                    category = "model_response"
+                    reason = ("最终提交机会未产生合法报告：" if finalizing else "独立审核报告不合法：") + (observation.error.message if observation.error else "未知提交错误")
                 if not rejection and observation.ok and call.name != "submit_verification":
                     evidence_cache[key] = content
                 messages.append({"role": "tool", "tool_call_id": call.tool_call_id, "content": json.dumps(content, ensure_ascii=False)})
@@ -243,7 +249,7 @@ class VerifierAgent:
             failure_category=None if passed else category, retryable=None if passed else category in {"validation", "insufficient_evidence"},
             blocking_reason=None if passed else reason,
             verification_status="assessed" if submitted else "not_performed", failure_scope="todo" if submitted else "run",
-            allowed_actions=[] if passed else ["stop", "replan"])
+            allowed_actions=[] if passed else ["stop", "replan"] if submitted else ["stop"])
 
     @staticmethod
     def _usable(observation):

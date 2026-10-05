@@ -68,6 +68,9 @@ def _reviewed_answer(state, todos):
             raise ValueError("最新结果缺少匹配的 Supervisor 接受决定")
     limited = [t for t in todos if t.review.action == "accept_with_limitations"]
     sections = ["# 任务交付（含限制）" if limited else "# 任务完成"]
+    basic_count = sum(state["verifications_by_id"][t.verification_id].get("verification_status") == "checks_only" for t in todos)
+    if basic_count:
+        sections.append(f"验收方式：由 Supervisor 验收；{basic_count} 项仅完成基础检查，未进行独立 LLM 审核。")
     if limited:
         sections.append("## 验收限制\n以下交付由 Supervisor 带限制接受，不代表原始验收条件全部满足。")
         share = max(120, 3400 // len(limited))

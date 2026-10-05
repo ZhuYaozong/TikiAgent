@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Capability = Literal["web_research", "workspace_read", "workspace_write", "python_environment", "command_execution"]
 DeliveryMode = Literal["artifact", "inspection", "environment"]
+VerificationLevel = Literal["basic", "independent"]
 ReviewAction = Literal["accept", "accept_with_limitations", "request_changes", "stop"]
 
 
@@ -58,6 +59,10 @@ def review_blockers(todo, result, report):
         blockers.append("最新 Result/Handoff/Verification 身份不匹配")
     if report.get("failure_category") == "identity":
         blockers.append("身份或证据完整性检查未通过")
+    if report.get("todo_id") != todo.todo_id:
+        blockers.append("检查报告未关联当前 Todo")
+    if report.get("verification_status") == "checks_only" and todo.verification_level == "independent":
+        blockers.append("该 Todo 已冻结独立审核要求，不能用基础检查静默降级")
     if report.get("failure_category") == "permission" and report.get("verification_status") == "not_performed":
         blockers.append("权限阻塞且未形成可审核交付，不能声称已执行")
     if todo.acceptance_criteria and report.get("verification_status", "assessed") == "assessed":
@@ -73,13 +78,16 @@ def review_blockers(todo, result, report):
 def review_limitations(todo, report):
     """保留未满足条件，不允许接受决定或最终摘要掩盖这些缺口。"""
     if report.get("verification_status") == "not_performed":
-        return ["审核未完成：" + str(report.get("blocking_reason") or "未取得完整报告")[:400]]
+        return list(dict.fromkeys([*report.get("limitations", []), "审核未完成：" + str(report.get("blocking_reason") or "未取得完整报告")[:400]]))
+    if report.get("verification_status") == "checks_only":
+        # 未调用 LLM 不等于审核失败；仅机械检查的边界必须如实展示。
+        return list(report.get("limitations", []))
     checks = {a.get("criterion_id"): a for a in report.get("assessments", [])}
     missing = [(f"未确认验收项 {c.criterion_id}：{c.description[:200]}；{str(checks.get(c.criterion_id, {}).get('reason', '证据不足'))[:200]}")[:500]
                for c in todo.acceptance_criteria if checks.get(c.criterion_id, {}).get("status") != "passed"]
     if not report.get("passed") and not missing:
         missing = ["审核保留意见：" + str(report.get("blocking_reason") or report.get("failures") or "未全部满足")[:400]]
-    return missing
+    return list(dict.fromkeys([*report.get("limitations", []), *missing]))
 
 
 def accepted_review_valid(todo, result, report):
@@ -107,7 +115,8 @@ class CriterionAssessment(BaseModel):
     model_config = ConfigDict(extra="forbid")
     criterion_id: str = Field(min_length=1)
     status: Literal["passed", "failed", "insufficient_evidence"]
-    evidence_refs: list[str] = Field(default_factory=list, max_length=20)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=20,
+        description="passed 必须引用已读取且可用的真实 evidence_id；在 reason 里写来源 ID 不能代替本字段。failed/insufficient_evidence 可为空")
     reason: str = Field(min_length=1, max_length=1500)
 
 

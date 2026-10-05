@@ -24,7 +24,7 @@ TikiAgent 使用 Supervisor 动态规划和委派任务，由 ResearchAgent 与 
 | 能力 | 说明 |
 |---|---|
 | Multi-Agent orchestration | 工具型 Supervisor 创建带依赖的多 Todo 计划，自主检索、委派、调整或停止 |
-| Verification loop | VerifierAgent 独立审核；Supervisor 决定接受、带限制接受、补做或停止，Gate 保留证据与身份边界 |
+| Conditional verification | 必经基础 Gate，复杂任务条件触发独立 VerifierAgent；Supervisor 决定验收，保留证据与身份边界 |
 | Context engineering | 稳定提示词前置，History／Local 两层 LLM 摘要，近期完整交互与 token 预算保护 |
 | Execution harness | Tool Exposure、Permission、Approval、Workspace、Timeout、Checkpoint 与 Trace |
 | Recovery semantics | Approval 暂停、Checkpoint Resume、未知副作用 Recovery/Reconcile |
@@ -49,7 +49,8 @@ TikiAgent 使用 Supervisor 动态规划和委派任务，由 ResearchAgent 与 
                 ResearchAgent       CodeAgent
                         ╲               ╱
                          ▼             ▼
-                  VerifierAgent + Verification Gate
+                      Verification Gate
+                  基础检查 · 条件独立审核
                                 │
                                 ▼
                            Supervisor
@@ -70,7 +71,8 @@ Structured Handoff
         ↓
 Specialist Result
         ↓
-Verification(result_id + handoff_id + subject_agent)
+Verification Gate(result_id + handoff_id + todo_id)
+        ↓ 基础检查 / 需要时独立 VerifierAgent
         ↓
 Supervisor Review: Accept / Accept with limitations / Request changes / Stop
         ↓
@@ -83,11 +85,13 @@ Supervisor FINISH / RETRY / DELEGATE
 
 ResearchAgent 仅使用 Tavily 搜索与提取网页；本地文件、Python 环境和依赖任务交给 CodeAgent。Supervisor 为每个 Todo 声明所需能力和逐项验收条件，委派后不能通过删除标准绕过失败。
 
-VerifierAgent 使用独立上下文和受控工具读取证据，逐项报告符合性、缺陷与不确定性。报告的 `passed` 是审核意见，不直接改变正式任务的成功/失败状态。Todo 进入 `awaiting_review` 后，Supervisor 通过 `review_result` 决定接受、带限制接受、补做或停止；有用但不完整的研究成果可以带限制交给 CodeAgent 继续工作，不必为质量缺口反复搜索。
+常规搜索、只读调查、依赖安装和简单文件创建默认采用 `basic`：Gate 不调用 LLM、不运行额外命令，只检查结果身份、来源追溯、实际产物及 Workspace 边界。复杂任务采用 `independent`：跨任务代码交付、同时写入文件与执行命令的复合代码 Todo 会自动升级；其他需要独立审查的任务由 Supervisor 在规划时明确选择并给出理由。审核级别在委派后冻结，随 Todo/Handoff/Checkpoint 保存；缺少新字段的旧快照保留独立审核要求，不静默降级。
 
-Verification Gate 保留硬约束：最新 `result_id/handoff_id/todo_id/verification_id` 绑定、来源可追溯、报告完整覆盖与证据引用有效。Supervisor 不能覆盖身份错配、伪造证据或权限阻塞，也不能接受不存在的交付文件。FINISH 检查每项最新结果是否已有匹配的接受决定，不再要求审核意见全部 PASS。带限制接受保留原标准，在最终回答、History 和后续上下文中明确披露未满足项，不称为“全部验收通过”。
+需要独立审核时，VerifierAgent 使用独立上下文和受控工具逐项读取证据，报告符合性、缺陷与不确定性。报告区分 `checks_only`（仅基础检查）、`assessed`（已有逐项审核）与 `not_performed`（审核未完成）；`passed` 在基础路径只表示机械检查满足，不能证明所有语义条件成立。两条路径都进入 `awaiting_review`，由 Supervisor 根据原始要求和交付通过 `review_result` 决定接受、带限制接受、补做或停止；不自动完成 Todo。
 
-验证取证达到预算后，保留一次仅提交报告的收尾机会，不增加取证次数；未能提交合法报告会明确报告审核未完成。Supervisor 可对已有实际交付明确带限制接受，但不会伪造审核通过；无交付、权限或身份阻塞仍不能放行。
+Verification Gate 保留硬约束：最新 `result_id/handoff_id/todo_id/verification_id` 绑定、来源可追溯和产物边界；独立审核报告还必须完整覆盖验收条件，单项 passed 必须有有效的结构化 `evidence_refs`，不能仅在 reason 中提及证据 ID。Supervisor 不能覆盖身份错配、伪造证据或未形成交付的权限阻塞，也不能接受不存在的交付文件。FINISH 要求每项最新结果已有匹配的接受决定，不要求审核意见全部 PASS。最终回答和 TUI 明确区分“基础检查完成”与“独立审核通过”，带限制接受不会隐去已知缺口。
+
+独立验证取证达到预算后，保留一次仅提交报告的收尾机会，不增加取证次数。报告格式错误在当前有界审核循环内返回修正反馈；未取得合法报告或审核服务失败时明确返回审核未完成，禁止仅因审核失败而重跑 Research/Code。Supervisor 可对已有真实交付明确带限制接受并披露审核缺失，但不能伪造独立审核通过；无交付、权限或身份阻塞仍不能放行。
 
 Python 环境任务可查询实际解释器与发行包版本、检查导入；安装仍必须走原来的审批/Checkpoint 链。已经满足要求的依赖不需要重复安装或创建无关测试。验证工具的隔离子进程、临时测试副本**不是强沙箱**，请只运行可信代码。详见 [验证契约与边界](docs/verification-agent.md)。
 
@@ -292,7 +296,7 @@ uv run --locked python -m compileall -q src tests
 
 运行失败会保存关联当前 Turn 的失败回复，CLI 返回非零状态，TUI 显示失败。下轮聊天使用逐 Turn 的最新回复，失败、暂停及未记录结果的旧任务不会被当成新指令自动续跑。失败不表示已回滚文件或外部副作用；恢复仍以权威 Checkpoint 为准，不依赖 Trace 猜测执行状态。
 
-只读文件调查使用 `inspection` 验收：Verifier 独立复读文件或目录证据，无需创建报告。创建/修改文件使用 `artifact` 验收，继续检查实际交付物。模型步骤与工具调用分别计数；正式 CodeAgent 默认每次最多 24 次工具调用、每任务最多 48 次，相同工具参数累计失败 2 次后阻止继续执行。预算包含被拒绝和参数错误的调用，暂停/恢复不会重置已消耗次数。
+只读文件调查使用 `inspection` 验收，基础路径检查实际执行证据，无需创建报告；需要独立审查才由 Verifier 复读文件或目录。创建/修改文件使用 `artifact` 验收，继续检查实际交付物。模型步骤与工具调用分别计数；正式 CodeAgent 默认每次最多 32 次工具调用、每任务最多 64 次，相同工具参数累计失败 2 次后阻止继续执行。预算包含被拒绝和参数错误的调用，暂停/恢复不会重置已消耗次数。
 
 TUI 中输入 `/paths` 可在本地查看当前 Session 的 Workspace、History/Handoff、Trace 和 Checkpoint 位置。此命令只更新显示，不提交给模型，也不写入任务 History。
 
@@ -313,15 +317,15 @@ TUI 中输入 `/paths` 可在本地查看当前 Session 的 Workspace、History/
 | Agent | 工作轮数 / 工具上限 | 工作输出 / 收尾输出 token |
 |---|---|---|
 | Supervisor | 任务内 20 轮 / 32 次编排调用 | 16,384 / 16,384 |
-| ResearchAgent | 每次 10 轮 / 4 次搜索 + 6 次提取 | 16,384 / 16,384 |
+| ResearchAgent | 每次 16 轮 / 8 次搜索 + 10 次提取 | 16,384 / 16,384 |
 | CodeAgent | 每次 16 轮 / 32 次工具 | 32,768 / 16,384 |
-| Verifier | 每次 6 轮 / 10 次证据工具 | 16,384 / 16,384 |
+| Verifier（条件调用） | 每次 6 轮 / 10 次证据工具 | 16,384 / 16,384 |
 
-任务默认最多 5 次委派、64 次 Code 工具、20 次联网请求、128 次模型请求（包含路由、压缩和实际重试），其中 16 次模型请求保留给收尾。每个执行身份仍只允许一次收尾，不因尚有总额度就反复总结。同一 Todo 最多尝试两次，重新委派必须明确缺失证据、策略变化和预期证据。恢复旧任务不会刷新已冻结额度。
+任务默认最多 5 次委派、64 次 Code 工具、40 次联网请求、128 次模型请求（包含路由、压缩和实际重试），其中 16 次模型请求保留给收尾。每个执行身份仍只允许一次收尾，不因尚有总额度就反复总结。同一 Todo 最多尝试两次，重新委派必须明确缺失证据、策略变化和预期证据。恢复旧任务不会刷新已冻结额度。
 
 Base/Local 软压缩阈值为 32,000/48,000 token，Local 优先保留最近 8 组完整交互，并按 16,000 token 近期预算缩小组数；至少保留一组，不能拆开 ToolCall/ToolResult。完整输入达到可用预算 85% 时提前尝试压缩。任务、系统规则、TaskBoard 和受保护 Handoff 不交给摘要器改写。
 
-Research 收尾只生成有界结论与来源 ID，再由程序补入真实 Observation 中的 URL 和标题，不复制整篇网页。结果整理失败与工具预算耗尽分别诊断；不能因整理失败再次搜索。已经完成整理、具有证据的部分研究成果仍进入 Verifier，Supervisor 根据审核意见判断是否接受或带限制交付。
+Research 收尾只生成有界结论与来源 ID，再由程序补入真实 Observation 中的 URL 和标题，不复制整篇网页。结果整理失败与工具预算耗尽分别诊断；不能因整理失败再次搜索。已经完成整理、具有证据的部分研究成果仍进入 Gate，Supervisor 根据基础检查或条件独立审核报告判断是否接受或带限制交付。
 
 全部预算可通过 `.env.example` 中的 `TIKI_OUTPUT_*`、`TIKI_BUDGET_*`、`TIKI_CONTEXT_*`、`TIKI_THINKING_*` 配置。更换模型时应同时检查真实窗口、输出能力和成本，而不是只提高循环次数。详见 [执行预算与进展策略](docs/execution-policy.md)。
 

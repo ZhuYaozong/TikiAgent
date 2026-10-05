@@ -4,7 +4,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
-from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, CriterionAssessment, DeliveryMode
+from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, CriterionAssessment, DeliveryMode, VerificationLevel
 
 
 class ControlModel(BaseModel):
@@ -72,7 +72,9 @@ class VerificationReport(ControlModel):
     assessments: list[CriterionAssessment] = Field(default_factory=list)
     evidence_records: dict[str, dict[str, Any]] = Field(default_factory=dict)
     blocking_reason: str | None = None
-    verification_status: Literal["assessed", "not_performed"] = "assessed"
+    verification_status: Literal["assessed", "checks_only", "not_performed"] = "assessed"
+    limitations: list[str] = Field(default_factory=list, max_length=24)
+    verification_reason: str = ""
     failure_scope: Literal["run", "todo", "workflow"] = "todo"
     allowed_actions: list[Literal["stop", "replan", "retry"]] = Field(default_factory=list)
     # passed 是符合性意见；正式工作流的完成状态由 Supervisor Review 决定。
@@ -173,3 +175,6 @@ class Handoff(ControlModel):
     delivery_mode: DeliveryMode = "artifact"
     required_capabilities: list[Capability] = Field(default_factory=list)
     acceptance_criteria: list[AcceptanceCriterion] = Field(default_factory=list)
+    # 旧快照缺少字段时沿用独立审核，不因升级而自动放宽恢复任务。
+    verification_level: VerificationLevel = "independent"
+    verification_reason: str = "兼容旧任务的独立审核要求"

@@ -23,7 +23,7 @@ from tikiagent.tools.dispatcher import Dispatcher
 from tikiagent.tools.models import ToolError, ToolExecutionError, ToolResult
 from tikiagent.tools.registry import RegisteredTool, ToolRegistry
 from tikiagent.agents.capabilities import capability_prompt, supports
-from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, DeliveryMode
+from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, DeliveryMode, VerificationLevel
 from tikiagent.orchestration.requirements import ResultReview, ReviewAction, review_blockers, review_limitations
 from tikiagent.runtime.lifecycle import complete_once, final_context
 from tikiagent.harness.persistence.finalization import FinalizationLedger
@@ -45,6 +45,8 @@ class PlannedTodo(Arguments):
     depends_on: list[str] = Field(default_factory=list, max_length=20)
     required_capabilities: list[Capability] = Field(min_length=1, max_length=5)
     acceptance_criteria: list[AcceptanceCriterion] = Field(min_length=1, max_length=12)
+    verification_level: VerificationLevel = Field(default="basic", description="简单搜索、文件、环境任务用 basic；复杂代码/跨 Agent 交付或用户要求独立审查用 independent")
+    verification_reason: str = Field(default="常规任务，仅执行基础检查，由 Supervisor 验收", min_length=1, max_length=500)
 
 
 class PlanArgs(Arguments):
@@ -140,6 +142,19 @@ class PlanningSupervisorAgent:
             items = {}
             for raw in todos:
                 item = PlannedTodo.model_validate(raw)
+                previous = old.items.get(item.todo_id)
+                # 保留旧计划的审核事实，再按本轮结构化依赖决定是否需要升级。
+                if previous is not None and "verification_level" not in raw and "verification_reason" not in raw:
+                    item = item.model_copy(update={"verification_level": previous.verification_level,
+                        "verification_reason": previous.verification_reason})
+                elif item.verification_level == "independent" and "verification_reason" not in raw:
+                    item = item.model_copy(update={"verification_reason": "Supervisor 在规划阶段要求独立审查"})
+                # 跨任务代码交付或写入+命令的复合任务保守升级；不解析任意自然语言关键词。
+                if item.owner == "code_agent" and item.delivery_mode == "artifact" and (
+                    item.depends_on or {"workspace_write", "command_execution"} <= set(item.required_capabilities)
+                ) and item.verification_level == "basic":
+                    item = item.model_copy(update={"verification_level": "independent",
+                        "verification_reason": "复合代码交付：存在任务依赖或同时写入文件与执行命令"})
                 if item.owner not in available_agents:
                     fail("agent_unavailable", "计划引用未配置的 Agent")
                 if not supports(item.owner, item.required_capabilities):
@@ -151,8 +166,12 @@ class PlanningSupervisorAgent:
                     fail("capability_mismatch", "ResearchAgent 不能执行本地环境任务")
                 if item.todo_id in items:
                     fail("invalid_plan", "Todo ID 重复")
-                previous = old.items.get(item.todo_id)
                 if previous is not None:
+                    if previous.status != "pending" and (
+                        previous.verification_level != item.verification_level
+                        or previous.verification_reason != item.verification_reason
+                    ):
+                        fail("immutable_verification", "已委派 Todo 的审核要求不可改写或降级")
                     if previous.acceptance_criteria and previous.acceptance_criteria != item.acceptance_criteria:
                         fail("immutable_acceptance", "已有 Todo 验收项不能删除或放宽；失败需要补充证据或调整执行方式")
                     if previous.delivery_mode != item.delivery_mode:

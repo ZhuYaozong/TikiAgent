@@ -217,6 +217,11 @@ class TuiEventAdapter:
             todo = next((item for item in state.todos if item.todo_id == data.get("todo_id")), None)
             if todo and (todo.result_id != data.get("result_id") or todo.handoff_id != data.get("handoff_id")):
                 return {}
+            if data.get("verification_status") == "checks_only":
+                return {"verification": _review_summary(state.review_actions) if state.review_actions else
+                        "基础检查完成 · 待验收" if data.get("passed") is True else "基础检查阻断"}
+            if data.get("verification_status") == "not_performed":
+                return {"verification": _review_summary(state.review_actions) if state.review_actions else "独立审核未完成"}
             if data.get("advisory"):
                 return {"verification": _review_summary(state.review_actions) if state.review_actions else "待验收"}
             return {"verification": "PASS" if data.get("passed") is True else "FAIL"}

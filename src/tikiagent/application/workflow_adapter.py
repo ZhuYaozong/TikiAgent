@@ -370,7 +370,9 @@ class TikiWorkflowAdapter:
                     scope=scope,
                     source="workflow_adapter",
                     correlation_id=report.result_id,
-                    message=(f"{agent} 审核意见：{'符合条件' if report.passed else '存在缺口'}；待 Supervisor 验收"
+                    message=(f"{agent} 基础检查{'完成' if report.passed else '阻断'}；未进行独立 LLM 审核，待 Supervisor 验收"
+                             if report.verification_status == "checks_only" else f"{agent} 独立审核未完成；待 Supervisor 决定"
+                             if report.verification_status == "not_performed" else f"{agent} 审核意见：{'符合条件' if report.passed else '存在缺口'}；待 Supervisor 验收"
                              if report.advisory else f"{agent} verification passed={report.passed}"),
                     data=report.model_dump(mode="json"),
                 )

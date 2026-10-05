@@ -63,6 +63,14 @@ class TuiEventPresenter:
         if kind == "verification_completed":
             passed = data.get("passed") is True
             detail = verification_detail(data)
+            if data.get("verification_status") == "checks_only":
+                return self._item(event, "verification" if passed else "error", "Verification Gate · 基础检查",
+                    ("基础检查完成（含限制） · 待 Supervisor 验收" if data.get("limitations") else
+                     "基础检查完成 · 待 Supervisor 验收") if passed else "基础检查阻断 · 不能接受",
+                    detail="仅机械检查，未进行独立 LLM 审核。\n" + (detail or event.message), collapsed=False)
+            if data.get("verification_status") == "not_performed":
+                return self._item(event, "verification", "Verifier · 审核未完成", "保留交付 · 待 Supervisor 决定",
+                    detail=detail or event.message, collapsed=False)
             if data.get("advisory"):
                 return self._item(event, "verification", "Verifier · 审核意见",
                     "符合条件 · 待 Supervisor 决定" if passed else "存在缺口 · 待 Supervisor 决定",
@@ -168,6 +176,8 @@ def _tool_output(name: str, result: dict) -> tuple[str, str]:
 
 def verification_detail(data: dict) -> str:
     lines = []
+    if data.get("verification_reason"):
+        lines.append("检查策略：" + str(data["verification_reason"]))
     if data.get("todo_id"):
         lines.append("Todo：" + str(data["todo_id"]))
     for item in data.get("assessments", [])[:12]:
@@ -177,6 +187,7 @@ def verification_detail(data: dict) -> str:
     for item in data.get("checks", [])[:12]:
         lines.append(f"{item.get('name')}: {'通过' if item.get('passed') else '未通过'} · {item.get('evidence', '')}")
     lines.extend(str(x) for x in data.get("failures", []))
+    lines.extend("限制：" + str(x) for x in data.get("limitations", []))
     if data.get("recommendation"):
         lines.append("建议：" + str(data["recommendation"]))
     return clipped("\n".join(lines), 2400)
@@ -184,7 +195,7 @@ def verification_detail(data: dict) -> str:
 
 def _agent_name(value: str) -> str:
     return {"supervisor": "Supervisor", "research_agent": "ResearchAgent", "code_agent": "CodeAgent",
-            "verification_gate": "Verifier · 审核", "verifier": "VerifierAgent", "resume_entry": "Resume · 恢复入口"}.get(value, value.replace("_", " ").title())
+            "verification_gate": "Verification Gate", "verifier": "VerifierAgent", "resume_entry": "Resume · 恢复入口"}.get(value, value.replace("_", " ").title())
 
 
 def _first_line(value: str, limit: int = 120) -> str:

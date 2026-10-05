@@ -6,7 +6,7 @@ from copy import deepcopy
 def verification_facts(payload: dict) -> dict:
     """身份、验收结论和失败分类保持准确，长证据按引用读取。"""
     keys = ("verification_id", "result_id", "handoff_id", "todo_id", "subject_agent", "mode",
-            "passed", "failure_category", "retryable", "blocking_reason", "failure_scope", "allowed_actions", "verification_status", "advisory", "hard_blockers")
+            "passed", "failure_category", "retryable", "blocking_reason", "failure_scope", "allowed_actions", "verification_status", "verification_reason", "limitations", "advisory", "hard_blockers")
     facts = {key: deepcopy(payload[key]) for key in keys if key in payload}
     facts["assessments"] = [
         {key: deepcopy(value) for key, value in assessment.items()
@@ -28,5 +28,7 @@ def verification_view(payload: dict) -> dict:
         value = payload.get(key)
         if value is not None:
             view[key] = str(value)[:800]
+    view["checks"] = [{"name": c.get("name"), "passed": c.get("passed"), "evidence": str(c.get("evidence", ""))[:240]}
+                      for c in payload.get("checks", [])[:24]]
     view["original_history_ref"] = payload.get("verification_id")
     return view
