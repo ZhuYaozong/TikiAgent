@@ -100,6 +100,7 @@ Screen {
 .feed-approval { border-left: solid #ef9f76; }
 .feed-verification { border-left: solid #7fd68a; }
 .feed-error { border-left: solid #ef6f6c; }
+.tool-failure { border-left: solid #ef6f6c; }
 
 .feed-summary {
     height: auto;
@@ -108,7 +109,6 @@ Screen {
 
 .feed-detail {
     height: auto;
-    max-height: 12;
     color: #b7b0a8;
     padding: 0 1 1 1;
 }

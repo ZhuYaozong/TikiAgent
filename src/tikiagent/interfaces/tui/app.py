@@ -48,6 +48,7 @@ from tikiagent.interfaces.tui.modals import (
 from tikiagent.interfaces.tui.models import FeedItem, TranscriptItem, TuiViewState
 from tikiagent.interfaces.tui.sink import TextualEventSink
 from tikiagent.interfaces.tui.workspace import ReadOnlyWorkspaceSnapshotter
+from tikiagent.interfaces.tui.presenter import REVIEW_LABELS, TODO_LABELS
 
 
 BackendFactory = Callable[[EventBus], TuiBackend]
@@ -58,6 +59,41 @@ class OperationRequest:
     operation_id: str
     operation: str
     payload: dict[str, Any]
+
+
+class ProjectedFeedCard(Collapsible):
+    """主线程原地更新显示卡片，保留用户选择的展开状态。"""
+
+    def __init__(self, item: FeedItem, title: str) -> None:
+        self._projecting = False
+        self.summary_view = Static(Text(item.summary, style=_feed_color(item.kind)), classes="feed-summary")
+        self.detail_view = Static(Text(item.detail or ""), classes="feed-detail")
+        self.item = item
+        super().__init__(self.summary_view, self.detail_view, title=title,
+                         collapsed=item.collapsed, classes=f"feed-card feed-{item.kind}")
+        self.set_class(item.tool_state in {"failed", "denied", "nonzero", "timeout"}, "tool-failure")
+
+    def _watch_collapsed(self, collapsed: bool) -> None:
+        if not self._projecting:
+            super()._watch_collapsed(collapsed)
+            return
+        # 自动展示错误不抢滚动位置；用户主动展开仍保留 Textual 默认行为。
+        self._update_collapsed(collapsed)
+        self.post_message(self.Collapsed(self) if collapsed else self.Expanded(self))
+
+    def update_item(self, item: FeedItem, title: str) -> None:
+        self.title = title
+        self.summary_view.update(Text(item.summary, style=_feed_color(item.kind)))
+        self.detail_view.update(Text(item.detail or ""))
+        self.set_class(item.tool_state in {"failed", "denied", "nonzero", "timeout"}, "tool-failure")
+        # 新出现的错误/审批展开一次；普通刷新不改变用户折叠选择。
+        if self.item.collapsed and not item.collapsed:
+            self._projecting = True
+            try:
+                self.collapsed = False
+            finally:
+                self._projecting = False
+        self.item = item
 
 
 class TikiTuiApp(App[None]):
@@ -100,6 +136,7 @@ class TikiTuiApp(App[None]):
         self._rendered_stream_id: str | None = None
         self._rendered_transcript: tuple[TranscriptItem, ...] = ()
         self._rendered_feed_count = 0
+        self._feed_widgets = {}
         self.event_bus = EventBus()
         self.event_bus.subscribe(TextualEventSink(self.post_message))
         factory = backend_factory or (
@@ -402,10 +439,10 @@ class TikiTuiApp(App[None]):
 
     def _sync_feed(self, state: TuiViewState) -> None:
         feed = self.query_one("#feed", VerticalScroll)
+        follow = feed.scroll_y >= feed.max_scroll_y - 1
         reset = (
             state.stream_id != self._rendered_stream_id
             or state.transcript != self._rendered_transcript
-            or len(state.feed) < self._rendered_feed_count
         )
         if reset:
             feed.remove_children()
@@ -415,10 +452,26 @@ class TikiTuiApp(App[None]):
             self._rendered_stream_id = state.stream_id
             self._rendered_transcript = state.transcript
             self._rendered_feed_count = 0
-        for item in state.feed[self._rendered_feed_count :]:
-            self._mount_feed_item(feed, item)
+            self._feed_widgets = {}
+        wanted = {item.card_key or f"{item.kind}:{item.sequence}" for item in state.feed}
+        for key in set(self._feed_widgets) - wanted:
+            self._feed_widgets.pop(key)[1].remove()
+        changed = reset
+        for item in state.feed:
+            key = item.card_key or f"{item.kind}:{item.sequence}"
+            previous = self._feed_widgets.get(key)
+            if previous is None:
+                widget = self._mount_feed_item(feed, item)
+                self._feed_widgets[key] = (item, widget)
+                changed = True
+            elif previous[0] != item and isinstance(previous[1], ProjectedFeedCard):
+                previous[1].update_item(item, self._card_title(item))
+                self._feed_widgets[key] = (item, previous[1])
+                changed = True
         self._rendered_feed_count = len(state.feed)
-        feed.scroll_end(animate=False)
+        # 布局刷新后再跟随；向上阅读时不强制跳到底部。
+        if changed and (follow or reset):
+            self.call_after_refresh(feed.scroll_end, animate=False)
 
     @staticmethod
     def _mount_welcome(feed: VerticalScroll) -> None:
@@ -434,15 +487,20 @@ class TikiTuiApp(App[None]):
         kind = "user" if item.role == "user" else "assistant"
         self._mount_message(feed, kind, "You" if kind == "user" else "TikiAgent", item.content)
 
-    def _mount_feed_item(self, feed: VerticalScroll, item: FeedItem) -> None:
+    def _mount_feed_item(self, feed: VerticalScroll, item: FeedItem):
         if item.kind in {"user", "assistant"}:
-            self._mount_message(
+            return self._mount_message(
                 feed,
                 item.kind,
                 item.title,
                 item.detail or item.summary,
             )
-            return
+        card = ProjectedFeedCard(item, self._card_title(item))
+        feed.mount(card)
+        return card
+
+    @staticmethod
+    def _card_title(item: FeedItem) -> str:
         marker = {
             "routing": "◇",
             "agent": "●",
@@ -452,23 +510,8 @@ class TikiTuiApp(App[None]):
             "error": "×",
             "system": "·",
         }[item.kind]
-        title = f"{marker} {item.title}"
-        summary = Static(Text(item.summary, style=_feed_color(item.kind)), classes="feed-summary")
-        if item.detail:
-            card = Collapsible(
-                summary,
-                Static(Text(item.detail), classes="feed-detail"),
-                title=title,
-                collapsed=item.collapsed,
-                classes=f"feed-card feed-{item.kind}",
-            )
-        else:
-            card = Vertical(
-                Static(Text(title, style=f"bold {_feed_color(item.kind)}")),
-                summary,
-                classes=f"feed-card feed-{item.kind}",
-            )
-        feed.mount(card)
+        # 折叠时仍展示操作目标和主要结果，而非只有工具名。
+        return f"{marker} {item.title} · {_shorten(item.summary, 160)}"
 
     @staticmethod
     def _mount_message(
@@ -476,15 +519,15 @@ class TikiTuiApp(App[None]):
         kind: str,
         title: str,
         content: str,
-    ) -> None:
+    ):
         body = Markdown(content) if kind == "assistant" else Static(Text(content))
-        feed.mount(
-            Vertical(
+        card = Vertical(
                 Static(Text(title, style=f"bold {_feed_color(kind)}")),
                 body,
                 classes=f"feed-card feed-{kind}",
             )
-        )
+        feed.mount(card)
+        return card
 
     @staticmethod
     def _session_table(state: TuiViewState) -> Table:
@@ -504,7 +547,11 @@ class TikiTuiApp(App[None]):
         table.add_row("status", state.status)
         table.add_row("agent", state.current_agent)
         table.add_row("verify", state.verification)
-        table.add_row("tools", str(state.tool_calls))
+        table.add_row("请求数", str(state.tool_calls))
+        for todo in state.todos:
+            label = REVIEW_LABELS.get(todo.review_action, TODO_LABELS.get(todo.status, todo.status))
+            table.add_row("Todo", Text(_shorten(todo.description, 52)))
+            table.add_row("", Text(f"{todo.owner} · {label} · 尝试 {todo.attempts}"))
         return table
 
     @staticmethod

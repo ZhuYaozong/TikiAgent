@@ -107,6 +107,7 @@ class LazyResearchAgent:
         finalizations=None,
         policy=None,
         request_budget=None,
+        observer=None,
     ) -> None:
         self.model = model
         self.env_file = env_file
@@ -116,6 +117,7 @@ class LazyResearchAgent:
         self.finalizations = finalizations
         self.policy = policy or AgentPolicy()
         self.request_budget = request_budget
+        self.observer = observer
 
     def run(
         self,
@@ -139,6 +141,7 @@ class LazyResearchAgent:
                 max_searches=self.policy.research_searches,
                 max_extracts=self.policy.research_extracts,
                 request_budget=self.request_budget,
+                observer=self.observer,
             )
         return self.agent.run(
             handoff,
@@ -210,7 +213,8 @@ class ApplicationRuntimeFactory:
 
         def observe(event_type, state, correlation_id, data):
             # 编排事件源于实际操作；统一脱敏分发，Trace 不承担恢复职责。
-            scope = EventScope(session_id=session_id, workspace_id=workspace_id, task_id=state.get("task_id"))
+            scope = EventScope(session_id=session_id, workspace_id=workspace_id,
+                               task_id=state.get("task_id"), run_id=state.get("run_id"))
             message = f"{data['tool_name']}: {event_type}" if data.get("tool_name") else event_type
             event = self.event_bus.emit(event_type, scope=scope, source="workflow_runtime_adapter",
                                        correlation_id=correlation_id, message=message, data=data)
@@ -307,7 +311,7 @@ class ApplicationRuntimeFactory:
             supervisor=PlanningSupervisorAgent(model("supervisor"), context_runtime=context_runtime(), observer=observe, finalizations=finalizations,
                 max_steps=self.policy.supervisor_steps, max_tool_calls=self.policy.supervisor_tools),
             research_agent=LazyResearchAgent(model("research_agent"), self.env_file, context_runtime=context_runtime(), finalizations=finalizations,
-                policy=self.policy, request_budget=self.request_budget),
+                policy=self.policy, request_budget=self.request_budget, observer=observe),
             code_agent=code_agent,
             verification_gate=gate,
             artifact_guard=artifact_guard,

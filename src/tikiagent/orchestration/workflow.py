@@ -1,6 +1,6 @@
 """Supervisor → Specialist → Verification Gate 的 Context-aware 工作流。"""
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any, Literal, Protocol, cast
 
 from langgraph.graph import END, START, StateGraph
@@ -129,6 +129,8 @@ class MultiAgentWorkflow:
         self.notepad_store = notepad_store or InMemoryNotepadStore()
         self.context_profiles = context_profiles
         self.artifact_guard = artifact_guard
+        # 观察器只接收节点入口事实，不参与 Graph 路由或恢复决策。
+        self.node_observer = None
         self._bind_context_services()
         self.graph = self._build_graph()
 
@@ -700,11 +702,16 @@ class MultiAgentWorkflow:
 
     def _build_graph(self):
         builder = StateGraph(TikiState)
-        builder.add_node("supervisor", self._supervisor_node)
-        builder.add_node("research_agent", self._research_node)
-        builder.add_node("code_agent", self._code_node)
-        builder.add_node("resume_entry", self._resume_entry_node)
-        builder.add_node("verification_gate", self._verification_node)
+        for name, handler in (("supervisor", self._supervisor_node),
+                              ("research_agent", self._research_node),
+                              ("code_agent", self._code_node),
+                              ("resume_entry", self._resume_entry_node),
+                              ("verification_gate", self._verification_node)):
+            def observed(state, _name=name, _handler=handler):
+                if self.node_observer is not None:
+                    self.node_observer(_name, state)
+                return _handler(state)
+            builder.add_node(name, observed)
         builder.add_node("finalization", self._finalization_node)
         builder.add_conditional_edges(
             START,
@@ -928,6 +935,7 @@ class MultiAgentWorkflow:
         approval_decision: ApprovalDecision | None = None,
         recovery_decision: RecoveryDecision | None = None,
         reconciliation: ReconcileResult | None = None,
+        snapshot_observer: Callable[[TikiState | None, TikiState], None] | None = None,
     ) -> TikiState:
         """加载权威快照，然后通过 START → Resume Entry 重新进入 Graph。"""
 
@@ -985,10 +993,19 @@ class MultiAgentWorkflow:
         }
         state["runtime_checkpoint_id"] = checkpoint_id
         state["runtime_checkpoint_revision"] = expected_revision
-        result = self.graph.invoke(
+        snapshots = self.graph.stream(
             state,
             config={"recursion_limit": self.recursion_limit},
+            stream_mode="values",
         )
+        # 恢复同样逐节点发布事实；不能只展示恢复后的最终快照。
+        previous = None
+        result = state
+        for snapshot in snapshots:
+            result = cast(TikiState, snapshot)
+            if snapshot_observer is not None:
+                snapshot_observer(previous, result)
+            previous = result
         return cast(TikiState, result)
 
     def stream(

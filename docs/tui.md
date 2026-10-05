@@ -31,15 +31,44 @@ TuiViewState.feed
 Textual Feed Card
 ```
 
-`TuiEventPresenter` 只选择用户需要的安全字段。Widget 不解析 Workflow State，也不会读取原始 ToolResult stdout。Session、Workflow start/completed 等低价值事件只更新顶部与侧栏，不重复污染主对话。
+`TuiEventPresenter` 只选择用户需要的脱敏、有界字段。Widget 不解析 Workflow State，也不直接读取原始 ToolResult；命令输出和文件内容只通过显示投影提供有限预览。Session、Workflow start/completed 等低价值事件只更新顶部与侧栏，不重复污染主对话。
 
 主 Feed 包含：
 
 - 用户问题卡片；
 - Supervisor / Agent / Handoff 的紧凑进度；
-- 默认折叠的 Tool 执行摘要；
-- Verification PASS/FAIL；
+- 同一 ToolCall 原地更新的工具卡片，折叠标题也显示目标与主要结果；
+- 只读 TaskBoard 进度，以及关联最新 Result 的验收状态；
+- Verifier 的逐项审核意见、证据及缺口，和 Supervisor 的独立验收决定；
 - 完整 Markdown 最终回答与来源链接。
+
+### 工具与任务进度
+
+`requested → running → completed` 更新同一张卡片，不追加三张日志。调用按 Session/Task/Agent/Run/ToolCall 隔离；新的 execution identity 区分实际执行尝试，审批恢复继续更新对应卡片。完整事件顺序仍用于观察与审计，显示合并不参与 Checkpoint 恢复。
+
+文件工具展示路径、写入/替换量、目录或匹配数量；联网工具展示查询、来源标题和 URL；命令展示 argv、cwd、退出码、耗时及有限 stdout/stderr。工具返回不等于业务成功：权限拒绝、预算拦截、非零退出和超时明确显示并默认展开。ASK 只显示“待审批”，不伪造 ToolResult，也不提前显示“执行中”。
+
+TaskBoard 是现有 Workflow 事实的只读显示投影，没有第二套 Todo 存储。展开任务清单可查看 owner、状态、尝试次数、最新 Result/Verification 引用和验收限制。过期审核标记为历史信息，不代表当前交付已验收。侧栏“请求数”统计当前 Turn 中观测到的唯一调用请求，覆盖 Supervisor、Research、Code 与 Verifier；不是实际执行次数、账单计量或跨进程累计次数。
+
+Agent 开始事件在真实 Graph 节点入口产生，不根据 `current_agent` 的下一站推断。Resume 同样逐节点发布事件。任一 Todo 带限制接受，后续 Todo 的正常接受不能抹掉整体“含限制”。
+
+位于底部时 Feed 自动跟随；向上阅读时不强制滚到底部。已有卡片更新保留展开选择；新出现的错误或审批会展开一次。Worker 仍只发送 Textual Message，所有 Widget 修改在主线程执行。
+
+显示文本与列表有限长，并遮蔽已识别的凭据和终端控制字符，不展示 `reasoning_content`。文件长度和匹配数量在事件截断前计算；预览不等于完整原始内容，任意内容中的秘密识别仍不能保证。
+
+### 验证显示链路
+
+离线事件投影、真实 Checkpoint 审批恢复和 Textual 主线程/滚动回归覆盖在 `tests/test_execution_visibility.py`。真实 API 验证是显式启用的测试，读取本地 `.env`，创建隔离的临时 Session，不修改现有 `.tiki`：
+
+```powershell
+$env:TIKI_RUN_VISIBILITY_LIVE = '1'
+uv run --locked python -m pytest tests/test_execution_visibility_live.py -s
+Remove-Item Env:TIKI_RUN_VISIBILITY_LIVE
+```
+
+该测试包含 Research、Coding、Hybrid 三个小任务，会产生模型和 Tavily 调用费用；默认测试运行不调用 API。
+
+2026-10-05 使用本地配置完成真实验证：Research、Coding、Hybrid 均得到 `workflow_completed`；对应唯一工具请求/工具卡片数量为 13/13、10/10、21/21，Todo 数量为 1、1、2。该记录验证显示链路，不是任务成功率 Evaluation，也不保证其他运行产生相同调用数量。
 
 ## 最终回答
 

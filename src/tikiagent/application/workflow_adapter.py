@@ -108,6 +108,7 @@ class TikiWorkflowAdapter:
             data={"context_refs": context_refs},
         )
         workflow = self.workflow_factory(scope.session_id, workspace_id)
+        self._bind_node_events(workflow, scope)
         state: TikiState | None = None
         previous: TikiState | None = None
         try:
@@ -228,6 +229,7 @@ class TikiWorkflowAdapter:
         if self.request_budget:
             self.request_budget.bind(scope.session_id, checkpoint.scope.task_id)
         workflow = self.workflow_factory(scope.session_id, workspace_id)
+        self._bind_node_events(workflow, scope.model_copy(update={"task_id": checkpoint.scope.task_id}))
         self.event_bus.emit(
             "workflow_resumed",
             scope=scope.model_copy(
@@ -249,6 +251,8 @@ class TikiWorkflowAdapter:
                 approval_decision=approval_decision,
                 recovery_decision=recovery_decision,
                 reconciliation=reconciliation,
+                snapshot_observer=lambda previous, current: self._emit_snapshot(previous, current,
+                    scope.model_copy(update={"task_id": checkpoint.scope.task_id}), restored=previous is None),
             )
         except Exception as error:
             self._emit_execution_error(scope.model_copy(update={"task_id": checkpoint.scope.task_id}), error)
@@ -300,19 +304,21 @@ class TikiWorkflowAdapter:
         previous: TikiState | None,
         current: TikiState,
         scope: EventScope,
+        *,
+        restored: bool = False,
     ) -> None:
         """把 Graph 已产生的结构化状态变化映射成 UI 事件。"""
 
         correlation_id = current["task_id"]
-        if previous is None or current["current_agent"] != previous["current_agent"]:
-            self.event_bus.emit(
-                "agent_started",
-                scope=scope,
-                source="workflow_adapter",
-                correlation_id=correlation_id,
-                message=f"进入 {current['current_agent']}",
-                data={"agent": current["current_agent"]},
-            )
+        board = current["task_board"]
+        if previous is None or board != previous["task_board"]:
+            # 不转发 State 或内部 messages，只投影已有结构化任务事实。
+            self.event_bus.emit("task_board_updated", scope=scope, source="workflow_adapter",
+                correlation_id=correlation_id, message=f"任务清单：{len(board.items)} 项",
+                data={"items": [item.model_dump(mode="json") for item in board.items.values()]})
+        if restored:
+            # 恢复已有事实只刷新任务投影，不把旧交付/审核重发成新执行。
+            return
         decision = current["supervisor_decision"]
         old_decision = previous["supervisor_decision"] if previous else None
         if decision is not None and decision != old_decision:
@@ -335,7 +341,9 @@ class TikiWorkflowAdapter:
                 source="workflow_adapter",
                 correlation_id=handoff.handoff_id,
                 message=f"{handoff.from_agent} → {handoff.to_agent}",
-                data={"context_refs": handoff.context_refs},
+                data={"context_refs": handoff.context_refs, "handoff_id": handoff.handoff_id,
+                      "todo_id": handoff.todo_id, "instruction": handoff.instruction,
+                      "agent": handoff.to_agent},
             )
         old_results = previous["specialist_results"] if previous else {}
         for agent, result in current["specialist_results"].items():
@@ -346,7 +354,12 @@ class TikiWorkflowAdapter:
                     source="workflow_adapter",
                     correlation_id=str(result.get("result_id", correlation_id)),
                     message=f"{agent} 返回结果",
-                    data={"result_id": result.get("result_id")},
+                    data={"result_id": result.get("result_id"), "handoff_id": result.get("handoff_id"),
+                          "agent": agent, "summary": result.get("summary", ""),
+                          "delivery_status": result.get("delivery_status"),
+                          "changed_files": result.get("changed_files", []),
+                          "sources": [{"title": source.get("title"), "url": source.get("url")}
+                                      for source in result.get("sources", [])]},
                 )
         old_reports = previous["specialist_verifications"] if previous else {}
         for agent, report in current["specialist_verifications"].items():
@@ -361,6 +374,13 @@ class TikiWorkflowAdapter:
                              if report.advisory else f"{agent} verification passed={report.passed}"),
                     data=report.model_dump(mode="json"),
                 )
+
+    def _bind_node_events(self, workflow: MultiAgentWorkflow, scope: EventScope) -> None:
+        def entered(node, state):
+            agent = node
+            self.event_bus.emit("agent_started", scope=scope, source="workflow_node_adapter",
+                correlation_id=state["task_id"], message=f"进入 {agent}", data={"agent": agent})
+        workflow.node_observer = entered
 
     def _from_state(self, state: TikiState, workspace_id: str) -> WorkflowOutcome:
         if state["runtime_checkpoint_id"] is not None:

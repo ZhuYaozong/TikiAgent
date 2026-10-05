@@ -38,6 +38,7 @@ ApplicationEventType = Literal[
     "workflow_resumed",
     "supervisor_decision",
     "agent_started",
+    "task_board_updated",
     "handoff_created",
     "specialist_result",
     "verification_completed",

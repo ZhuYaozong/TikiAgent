@@ -75,3 +75,13 @@ def build_approval_details(request: ApprovalRequest) -> ApprovalDetails:
         rule_id=request.permission.rule_id,
         arguments=_display_value(request.tool_call.arguments),
     )
+
+
+def safe_display_text(value: str) -> str:
+    """事件与审批共用内嵌凭据/终端控制字符脱敏，不改变执行参数。"""
+    return _safe_text(value)
+
+
+def safe_display_command(value: list | tuple) -> list:
+    """遮蔽 argv 中独立的 --token VALUE 等凭据。"""
+    return _display_value(value, "command")

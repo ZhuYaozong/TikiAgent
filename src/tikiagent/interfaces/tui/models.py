@@ -44,6 +44,30 @@ class FeedItem(TuiModel):
     summary: str = Field(min_length=1)
     detail: str | None = None
     collapsed: bool = True
+    # 显示身份和有界文本，用于原地更新；不携带原始执行状态。
+    card_key: str | None = None
+    call_key: str | None = None
+    execution_id: str | None = None
+    attempt: int | None = None
+    tool_state: str | None = None
+    target: str = ""
+    request_detail: str = ""
+    result_detail: str = ""
+
+
+class TodoView(TuiModel):
+    """已有 TaskBoard 的只读显示快照，不用于执行或恢复。"""
+
+    todo_id: str
+    description: str
+    owner: str
+    status: str
+    attempts: int = 0
+    result_id: str | None = None
+    handoff_id: str | None = None
+    verification_id: str | None = None
+    review_action: str | None = None
+    detail: str = ""
 
 
 class TranscriptItem(TuiModel):
@@ -97,3 +121,6 @@ class TuiViewState(TuiModel):
     timeline: tuple[TimelineItem, ...] = ()
     feed: tuple[FeedItem, ...] = ()
     workspace_entries: tuple[WorkspaceEntry, ...] = ()
+    todos: tuple[TodoView, ...] = ()
+    review_actions: dict[str, str] = Field(default_factory=dict)
+    tool_request_keys: tuple[str, ...] = ()
