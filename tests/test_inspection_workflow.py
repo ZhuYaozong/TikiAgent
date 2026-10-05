@@ -26,6 +26,9 @@ class InspectionModel:
             name, args = "delegate_task", {"todo_id": "inspect", "instruction": "读取 index.html 并回答", "reason": "获取文件证据"}
         elif "repeated_tool_failure" in str(messages):
             name, args = "stop_task", {"reason": "CodeAgent repeated_tool_failure，停止重试"}
+        elif self.supervisor_steps == 3:
+            from test_planning_supervisor import review
+            return review("inspect")(messages)
         else:
             name, args = "finish_task", {"reason": "证据通过验证"}
         return ModelResponse(assistant_message={"role": "assistant"}, tool_calls=(ModelToolCall(f"sup-{self.supervisor_steps}", name, json.dumps(args)),))

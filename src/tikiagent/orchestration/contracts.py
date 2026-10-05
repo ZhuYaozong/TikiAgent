@@ -75,6 +75,9 @@ class VerificationReport(ControlModel):
     verification_status: Literal["assessed", "not_performed"] = "assessed"
     failure_scope: Literal["run", "todo", "workflow"] = "todo"
     allowed_actions: list[Literal["stop", "replan", "retry"]] = Field(default_factory=list)
+    # passed 是符合性意见；正式工作流的完成状态由 Supervisor Review 决定。
+    advisory: bool = False
+    hard_blockers: list[str] = Field(default_factory=list)
 
 
 SpecialistName = Literal["research_agent", "code_agent"]

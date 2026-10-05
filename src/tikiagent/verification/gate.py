@@ -3,7 +3,7 @@
 from typing import Any, Protocol
 
 from tikiagent.harness.scope import ExecutionContext
-from tikiagent.orchestration.requirements import assessments_valid
+from tikiagent.orchestration.requirements import assessments_valid, assessment_structure_valid
 from tikiagent.verification.failures import execution_failure, failure_report
 from tikiagent.providers.llm.openai_compatible import ModelOutputError
 from tikiagent.context.preparation import ContextBudgetExceeded
@@ -97,6 +97,11 @@ class VerificationGate:
             )
 
         verifier = self.verifiers[handoff.to_agent]
+        # 即使结果只交付了一部分，也不允许虚构来源在提前返回路径绕过身份边界。
+        if isinstance(result, ResearchResult):
+            observation_urls = {(o.observation_id, url) for o in result.observations for url in o.urls}
+            if any((s.observation_id, s.url) not in observation_urls for s in result.sources):
+                return self._identity_failure(handoff, result.result_id, "source_observation_provenance: 来源不能追溯到真实搜索 Observation")
         delivery = getattr(result, "delivery_status", None)
         # 部分研究交付不等于验收失败：有真实证据且已完成收尾时交给 Verifier 判断。
         reviewable_partial = (
@@ -129,6 +134,11 @@ class VerificationGate:
                 result.result_id,
                 "Verifier 返回了指向其他 Result/Handoff 的报告",
             )
+        # 审核未完成时交由 Supervisor 决定是否披露限制；完整报告仍必须覆盖契约。
+        if handoff.acceptance_criteria and report.verification_status == "assessed":
+            if report.todo_id != handoff.todo_id or not assessment_structure_valid(
+                    handoff.acceptance_criteria, report.assessments, report.evidence_records):
+                return self._identity_failure(handoff, result.result_id, "验收覆盖或证据引用不完整")
         if not report.passed:
             category, retryable = report.failure_category or "validation", report.retryable
             if report.failure_category is None:
@@ -186,4 +196,6 @@ class VerificationGate:
             recommendation="身份关联失败，禁止 Supervisor FINISH",
             failure_category="identity",
             retryable=False,
+            todo_id=handoff.todo_id,
+            hard_blockers=[evidence],
         )

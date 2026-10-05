@@ -6,6 +6,7 @@ from typing import TypeVar
 
 from tikiagent.orchestration.contracts import CodeResult, ResearchResult, SpecialistName
 from tikiagent.orchestration.state import TikiState
+from tikiagent.orchestration.requirements import accepted_review_valid
 
 
 _ResultT = TypeVar("_ResultT", ResearchResult, CodeResult)
@@ -19,6 +20,8 @@ def compose_final_answer(state: TikiState) -> str:
 
     sections: list[str] = ["# 任务完成"]
     todos = list(state["task_board"].items.values())
+    if state.get("requires_supervisor_review", False):
+        return _reviewed_answer(state, todos)
     if state.get("results_by_id") and len(todos) > len({t.owner for t in todos}):
         # 多 Todo 逐项展示，不能只返回每个 Agent 最后一次交付。
         share = max(200, 6800 // max(1, len(todos)))
@@ -51,6 +54,36 @@ def compose_final_answer(state: TikiState) -> str:
         )
     if research is None and code is None:
         raise ValueError("没有可用于最终回答的已验证 Specialist Result")
+    return _bound_markdown("\n\n".join(sections), MAX_FINAL_ANSWER_CHARS)
+
+
+def _reviewed_answer(state, todos):
+    """质量取舍不抹除事实：先披露限制，再展示已接受交付。"""
+    if not todos:
+        raise ValueError("没有经过 Supervisor 验收的交付")
+    for todo in todos:
+        raw = state.get("results_by_id", {}).get(todo.result_id, {})
+        report = state.get("verifications_by_id", {}).get(todo.verification_id, {})
+        if not accepted_review_valid(todo, raw, report):
+            raise ValueError("最新结果缺少匹配的 Supervisor 接受决定")
+    limited = [t for t in todos if t.review.action == "accept_with_limitations"]
+    sections = ["# 任务交付（含限制）" if limited else "# 任务完成"]
+    if limited:
+        sections.append("## 验收限制\n以下交付由 Supervisor 带限制接受，不代表原始验收条件全部满足。")
+        share = max(120, 3400 // len(limited))
+        for todo in limited:
+            # 限制区优先保留；长列表显式给出数量与原文引用，不被成果摘要挤掉。
+            text = f"### {todo.description[:120]}\n理由：{todo.review.reason}\n" + "\n".join(f"- {s}" for s in todo.review.limitations)
+            sections.append(_bound_markdown(text, share))
+            if len(text) > share:
+                sections.append(f"限制共 {len(todo.review.limitations)} 项；完整验收记录：`{todo.review.review_id}`（History）。")
+    available = MAX_FINAL_ANSWER_CHARS - len("\n\n".join(sections)) - 200
+    share = max(100, available // len(todos) - 4)
+    for todo in todos:
+        raw = state["results_by_id"][todo.result_id]
+        result = ResearchResult.model_validate(raw) if todo.owner == "research_agent" else CodeResult.model_validate(raw)
+        content = _research_sections(result) if isinstance(result, ResearchResult) else _code_sections(result)
+        sections.append(_bound_markdown("\n\n".join([f"## {todo.description[:120]}", *content]), share))
     return _bound_markdown("\n\n".join(sections), MAX_FINAL_ANSWER_CHARS)
 
 

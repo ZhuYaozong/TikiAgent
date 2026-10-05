@@ -68,6 +68,7 @@ class ContextBuilder:
                             todo.handoff_id,
                             todo.result_id,
                             todo.verification_id,
+                            todo.review.review_id if todo.review else None,
                         )
                         if value is not None
                     ],
@@ -89,8 +90,9 @@ class ContextBuilder:
                 relevant_notepad=relevant_notepad,
                 protected_refs=protected_refs,
                 control_facts=[
-                    {"record_id": record.record_id, **verification_facts(record.payload)}
-                    for record in history if record.record_type == "verification"
+                    {"record_id": record.record_id, **(verification_facts(record.payload)
+                      if record.record_type == "verification" else record.payload)}
+                    for record in history if record.record_type in {"verification", "review"}
                 ],
             ),
         )

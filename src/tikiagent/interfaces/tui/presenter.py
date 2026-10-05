@@ -45,6 +45,11 @@ class TuiEventPresenter:
             return self._item(event, "agent", "Specialist Result", event.message)
         if kind == "verification_completed":
             passed = event.data.get("passed") is True
+            if event.data.get("advisory"):
+                gaps = event.data.get("failures", [])
+                return self._item(event, "verification", "Verifier · 审核意见",
+                    "符合条件 · 待 Supervisor 决定" if passed else "存在缺口 · 待 Supervisor 决定",
+                    detail=event.message + ("\n" + "\n".join(gaps) if gaps else ""), collapsed=False)
             return self._item(
                 event,
                 "verification" if passed else "error",
@@ -53,6 +58,11 @@ class TuiEventPresenter:
                 detail=event.message,
                 collapsed=False,
             )
+        if kind == "result_reviewed":
+            labels = {"accept": "接受交付", "accept_with_limitations": "带限制接受", "request_changes": "要求补做", "stop": "停止"}
+            details = [str(event.data.get("reason", "")), *event.data.get("limitations", [])]
+            return self._item(event, "routing", "Supervisor · 验收决定",
+                labels.get(event.data.get("action"), "验收决定"), detail="\n".join(details), collapsed=False)
         if kind in {"tool_call_requested", "tool_execution_started", "tool_result_received"}:
             return self._tool_item(event)
         if kind in {"approval_required", "approval_decided"}:

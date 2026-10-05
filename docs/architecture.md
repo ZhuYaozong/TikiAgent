@@ -39,12 +39,16 @@ Supervisor 负责理解、规划、委派、重试和结束判断。Specialist �
 ```text
 最新 Specialist Result
         +
-匹配 result_id / handoff_id / subject_agent 的 PASS Verification
+匹配 result_id / handoff_id / subject_agent 的审核报告
+        +
+匹配最新 todo_id / result_id / handoff_id / verification_id 的 Supervisor 接受决定
         +
 全部必要 Todo 已完成
         ↓
 Supervisor FINISH
 ```
+
+正式工具型 Supervisor 使用 `review_result` 将“审核意见”与“验收决定”分离。Verifier 不修改 Todo 完成状态；审核后 Todo 等待 `awaiting_review`。接受/带限制接受才会完成该 Todo 并解锁依赖，补做/停止则保留失败事实。质量缺口可以明确接受，身份错配、非法证据、权限阻塞与不存在的文件不可覆盖。旧结构化基线仍使用原 PASS 门控。
 
 ## Context Plane
 

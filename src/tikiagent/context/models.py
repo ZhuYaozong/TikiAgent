@@ -6,7 +6,7 @@ from typing import Any, Literal
 import json
 
 from pydantic import Field
-from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, DeliveryMode
+from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, DeliveryMode, ResultReview
 
 from tikiagent.context.compression.models import ContextUsage
 from tikiagent.context.memory.models import (
@@ -34,6 +34,7 @@ class TodoItem(ContextModel):
     handoff_id: str | None = None
     result_id: str | None = None
     verification_id: str | None = None
+    review: ResultReview | None = None
     delivery_mode: DeliveryMode = "artifact"
     depends_on: list[str] = Field(default_factory=list)
     required_capabilities: list[Capability] = Field(default_factory=list)

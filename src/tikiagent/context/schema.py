@@ -19,6 +19,7 @@ HistoryRecordType = Literal[
     "handoff",
     "result",
     "verification",
+    "review",
     "note",
     "error",
     "artifact_ref",
@@ -29,6 +30,7 @@ TodoStatus = Literal[
     "pending",
     "in_progress",
     "awaiting_verification",
+    "awaiting_review",
     "completed",
     "failed",
 ]

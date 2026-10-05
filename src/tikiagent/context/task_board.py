@@ -7,6 +7,7 @@ from typing import Literal
 
 from tikiagent.context.models import TaskBoard, TodoItem
 from tikiagent.context.schema import ContextAgentName
+from tikiagent.orchestration.requirements import ResultReview
 
 
 class TaskBoardTransitionError(RuntimeError):
@@ -75,6 +76,7 @@ def todos_for_refs(board: TaskBoard, refs: list[str]) -> list[TodoItem]:
             item.handoff_id or "",
             item.result_id or "",
             item.verification_id or "",
+            item.review.review_id if item.review else "",
         }
     ]
 
@@ -117,6 +119,7 @@ def start_todo(
                 "handoff_id": handoff_id,
                 "result_id": None,
                 "verification_id": None,
+                "review": None,
             }
         ),
     )
@@ -153,6 +156,7 @@ def record_verification(
     result_id: str,
     verification_id: str,
     passed: bool,
+    await_supervisor: bool = False,
 ) -> TaskBoard:
     item = _require_item(board, todo_id)
     if (
@@ -167,11 +171,23 @@ def record_verification(
         board,
         item.model_copy(
             update={
-                "status": "completed" if passed else "failed",
+                "status": "awaiting_review" if await_supervisor else "completed" if passed else "failed",
                 "verification_id": verification_id,
             }
         ),
     )
+
+
+def record_review(board: TaskBoard, review: ResultReview) -> TaskBoard:
+    """只对当前待验收结果提交一次决定；新执行会清除旧决定。"""
+    item = _require_item(board, review.todo_id)
+    if (item.status != "awaiting_review" or item.result_id != review.result_id
+            or item.handoff_id != review.handoff_id or item.verification_id != review.verification_id):
+        raise TaskBoardTransitionError("验收决定与当前待验收 Result/Handoff/Verification 不匹配")
+    return _replace(board, item.model_copy(update={
+        "status": "completed" if review.action in {"accept", "accept_with_limitations"} else "failed",
+        "review": review,
+    }))
 
 
 def _require_item(board: TaskBoard, todo_id: str) -> TodoItem:

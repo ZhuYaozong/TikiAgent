@@ -143,6 +143,9 @@ def test_formal_environment_workflow_finishes_without_install_or_report(tmp_path
                                    "required_capabilities": ["python_environment"], "acceptance_criteria": [{"criterion_id": "installed", "description": "pydantic 已安装"}]}]})
                 if self.supervisor_steps == 2:
                     return call("delegate_task", {"todo_id": "env", "instruction": "查询 pydantic 安装版本，不要重复安装", "reason": "环境检查"})
+                if self.supervisor_steps == 3:
+                    from test_planning_supervisor import review
+                    return review("env")(messages)
                 return call("finish_task", {"reason": "当前结果已验证"})
             if "submit_verification" in names:
                 evidence = next((json.loads(m["content"]) for m in messages if m.get("tool_call_id") == "inspect_python_environment"), None)

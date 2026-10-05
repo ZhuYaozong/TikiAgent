@@ -42,7 +42,7 @@ from tikiagent.orchestration.contracts import (
     VerificationReport,
 )
 from tikiagent.orchestration.guards import latest_result_is_verified
-from tikiagent.orchestration.requirements import report_satisfies
+from tikiagent.orchestration.requirements import report_satisfies, accepted_review_valid
 from tikiagent.orchestration.state import (
     TikiState,
     create_multi_agent_state,
@@ -111,6 +111,7 @@ class MultiAgentWorkflow:
             ContextProfile,
         ]
         | None = None,
+        artifact_guard=None,
     ) -> None:
         if max_delegations < 1:
             raise ValueError("max_delegations 必须大于 0")
@@ -127,6 +128,7 @@ class MultiAgentWorkflow:
         self.history_store = history_store or InMemoryHistoryStore()
         self.notepad_store = notepad_store or InMemoryNotepadStore()
         self.context_profiles = context_profiles
+        self.artifact_guard = artifact_guard
         self._bind_context_services()
         self.graph = self._build_graph()
 
@@ -151,6 +153,7 @@ class MultiAgentWorkflow:
             decision, updates = self.supervisor.advance(
                 state, history_store=self.history_store, context_builder=self.context_builder,
                 finish_guard=self._finish_guard_failures,
+                artifact_guard=self.artifact_guard,
                 available_agents={name for name, agent in (("research_agent", self.research_agent), ("code_agent", self.code_agent)) if agent is not None},
             )
             decision_state = cast(TikiState, {**state, **updates})
@@ -198,7 +201,7 @@ class MultiAgentWorkflow:
                     target_agent=None,
                     instruction="",
                     reason=(
-                        "Graph 拒绝 FINISH：最新 Result 尚无匹配 PASS "
+                        "Graph 拒绝 FINISH：最新 Result 尚无有效验收 "
                         f"{unverified}；未完成 Todo {incomplete_todos}"
                     ),
                 )
@@ -570,6 +573,8 @@ class MultiAgentWorkflow:
                 exposed_tools=set(),
             )
         report = self.verification_gate.verify(**verification_arguments)
+        if getattr(self.supervisor, "supports_tool_loop", False):
+            report = report.model_copy(update={"advisory": True})
         if (report.result_id != raw_result.get("result_id") or report.handoff_id != handoff.handoff_id
                 or report.subject_agent != handoff.to_agent):
             raise RuntimeError("VerificationReport 与当前 Result/Handoff 身份不匹配")
@@ -583,6 +588,7 @@ class MultiAgentWorkflow:
             result_id=result_id,
             verification_id=report.verification_id,
             passed=report.passed,
+            await_supervisor=state.get("requires_supervisor_review", False),
         )
         self._write_history(
             state,
@@ -590,8 +596,8 @@ class MultiAgentWorkflow:
             record_type="verification",
             producer="verifier",
             summary=(
-                f"验证 {handoff.to_agent}："
-                f"{'PASS' if report.passed else 'FAIL'}"
+                f"审核 {handoff.to_agent}："
+                f"{'符合条件' if report.passed else '存在缺口'}；" + ("待 Supervisor 决定" if report.advisory else "旧规则工作流")
             ),
             payload=report.model_dump(mode="json"),
             refs=[result_id, handoff.handoff_id],
@@ -787,6 +793,9 @@ class MultiAgentWorkflow:
     @staticmethod
     def _supervisor_context_refs(state: TikiState) -> list[str]:
         refs: list[str] = list(state["session_context_refs"])
+        for todo in state["task_board"].items.values():
+            refs.extend(ref for ref in (todo.result_id, todo.verification_id,
+                todo.review.review_id if todo.review else None) if ref)
         handoff = state["latest_handoff"]
         if handoff is not None:
             refs.append(handoff.handoff_id)
@@ -828,10 +837,12 @@ class MultiAgentWorkflow:
     def _completion_text(state: TikiState) -> str:
         return compose_final_answer(state)
 
-    @staticmethod
     def _finish_guard_failures(
+        self,
         state: TikiState,
     ) -> tuple[list[SpecialistName], list[str]]:
+        if state.get("requires_supervisor_review", False) and not state.get("results_by_id"):
+            return list(state["required_specialists"]), list(state["task_board"].items)
         if state.get("results_by_id"):
             # 每个 Todo 校验自己的最新身份，不能用同一 Agent 后来的 PASS 覆盖前一项。
             incomplete = []
@@ -839,6 +850,14 @@ class MultiAgentWorkflow:
             for item in state["task_board"].items.values():
                 result = state["results_by_id"].get(item.result_id, {})
                 report = state.get("verifications_by_id", {}).get(item.verification_id, {})
+                if state.get("requires_supervisor_review", False):
+                    invalid = not accepted_review_valid(item, result, report)
+                    if self.artifact_guard:
+                        invalid = invalid or bool(self.artifact_guard(item, result))
+                    if invalid:
+                        incomplete.append(item.todo_id)
+                        unverified_owners.add(item.owner)
+                    continue
                 if (item.status != "completed" or not report.get("passed") or not report_satisfies(item, report)
                         or result.get("handoff_id") != item.handoff_id
                         or result.get("result_id") != item.result_id
@@ -878,6 +897,7 @@ class MultiAgentWorkflow:
             session_context_refs=session_context_refs,
         )
         state["history_cursor"] = self.history_store.cursor()
+        state["requires_supervisor_review"] = bool(getattr(self.supervisor, "supports_tool_loop", False))
         state["max_code_tool_calls"] = getattr(self, "task_code_tools", state["max_code_tool_calls"])
         return state
 

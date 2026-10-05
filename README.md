@@ -24,7 +24,7 @@ TikiAgent 使用 Supervisor 动态规划和委派任务，由 ResearchAgent 与 
 | 能力 | 说明 |
 |---|---|
 | Multi-Agent orchestration | 工具型 Supervisor 创建带依赖的多 Todo 计划，自主检索、委派、调整或停止 |
-| Verification loop | VerifierAgent 按 Todo 验收契约独立取证；Verification Gate 强制身份、证据与验收覆盖 |
+| Verification loop | VerifierAgent 独立审核；Supervisor 决定接受、带限制接受、补做或停止，Gate 保留证据与身份边界 |
 | Context engineering | 稳定提示词前置，History／Local 两层 LLM 摘要，近期完整交互与 token 预算保护 |
 | Execution harness | Tool Exposure、Permission、Approval、Workspace、Timeout、Checkpoint 与 Trace |
 | Recovery semantics | Approval 暂停、Checkpoint Resume、未知副作用 Recovery/Reconcile |
@@ -72,6 +72,8 @@ Specialist Result
         ↓
 Verification(result_id + handoff_id + subject_agent)
         ↓
+Supervisor Review: Accept / Accept with limitations / Request changes / Stop
+        ↓
 Supervisor FINISH / RETRY / DELEGATE
 ```
 
@@ -81,9 +83,11 @@ Supervisor FINISH / RETRY / DELEGATE
 
 ResearchAgent 仅使用 Tavily 搜索与提取网页；本地文件、Python 环境和依赖任务交给 CodeAgent。Supervisor 为每个 Todo 声明所需能力和逐项验收条件，委派后不能通过删除标准绕过失败。
 
-VerifierAgent 使用独立上下文和受控工具读取证据，逐项返回通过、失败或证据不足。Verification Gate 保留硬约束：最新 `result_id/handoff_id/todo_id` 绑定、来源可追溯、验收完整覆盖、有据可查；模型不能直接指定整个任务通过。只有 Supervisor 可以决定结束。
+VerifierAgent 使用独立上下文和受控工具读取证据，逐项报告符合性、缺陷与不确定性。报告的 `passed` 是审核意见，不直接改变正式任务的成功/失败状态。Todo 进入 `awaiting_review` 后，Supervisor 通过 `review_result` 决定接受、带限制接受、补做或停止；有用但不完整的研究成果可以带限制交给 CodeAgent 继续工作，不必为质量缺口反复搜索。
 
-验证取证达到预算后，保留一次仅提交报告的收尾机会，不增加取证次数；未能提交合法报告会明确报告验证未完成，而不是自动放行。
+Verification Gate 保留硬约束：最新 `result_id/handoff_id/todo_id/verification_id` 绑定、来源可追溯、报告完整覆盖与证据引用有效。Supervisor 不能覆盖身份错配、伪造证据或权限阻塞，也不能接受不存在的交付文件。FINISH 检查每项最新结果是否已有匹配的接受决定，不再要求审核意见全部 PASS。带限制接受保留原标准，在最终回答、History 和后续上下文中明确披露未满足项，不称为“全部验收通过”。
+
+验证取证达到预算后，保留一次仅提交报告的收尾机会，不增加取证次数；未能提交合法报告会明确报告审核未完成。Supervisor 可对已有实际交付明确带限制接受，但不会伪造审核通过；无交付、权限或身份阻塞仍不能放行。
 
 Python 环境任务可查询实际解释器与发行包版本、检查导入；安装仍必须走原来的审批/Checkpoint 链。已经满足要求的依赖不需要重复安装或创建无关测试。验证工具的隔离子进程、临时测试副本**不是强沙箱**，请只运行可信代码。详见 [验证契约与边界](docs/verification-agent.md)。
 
@@ -291,7 +295,7 @@ TUI 中输入 `/paths` 可在本地查看当前 Session 的 Workspace、History/
 
 正式 Code、Research、Supervisor、Verifier 在工作预算耗尽后保留一次只收尾请求，不再开放工作工具。Code 提交已有成果，Research 根据已获得的来源摘录综合结果，Verifier 仅提交验收报告，Supervisor 仅完成或停止。最终请求关闭输出重生成和 SDK 重试，使用规则压缩避免额外摘要调用；失败后以明确的部分成果或未完成状态返回。
 
-执行停止原因、交付状态和验证结论分别记录：`ready` 只是待验收声明，不代表 PASS；`not_performed` 表示尚未完成验收，不应解释成产物错误。FINISH 仍要求最新 Result/Handoff 对应的通过验证。失败处理按当前 Todo 和失败作用域决定，不能因为另一项 Code 任务停止就封锁所有 Code 任务。
+执行停止原因、交付状态、审核意见和 Supervisor 验收决定分别记录：`ready` 只是待验收声明；`not_performed` 表示审核未完成，不应解释成产物错误。正式 FINISH 要求最新 Result/Handoff/Verification 对应的 Supervisor 接受决定。失败处理按当前 Todo 和失败作用域决定，不能因为另一项 Code 任务停止就封锁所有 Code 任务。
 
 相同只读参数反复取得相同内容会触发无进展保护；文件版本变化后允许重新取证。成功的同参数测试在文件版本未变化时不重复执行；明确的权限拒绝不会被普通读取或恢复清除。Verifier 只复用自己取得、文件版本未变化的证据，不能把 CodeAgent 自述当作独立验收。版本使用路径、文件大小与修改时间近似计算，不是操作系统隔离或强内容一致性保证。
 
@@ -310,7 +314,7 @@ TUI 中输入 `/paths` 可在本地查看当前 Session 的 Workspace、History/
 
 任务默认最多 5 次委派、48 次 Code 工具、6 次联网请求、64 次模型请求（包含路由、压缩和实际重试），其中 16 次模型请求保留给收尾。每个执行身份仍只允许一次收尾，不因尚有总额度就反复总结。同一 Todo 最多尝试两次，重新委派必须明确缺失证据、策略变化和预期证据。
 
-Research 收尾只生成有界结论与来源 ID，再由程序补入真实 Observation 中的 URL 和标题，不复制整篇网页。结果整理失败与工具预算耗尽分别诊断；不能因整理失败再次搜索。已经完成整理、具有证据的部分研究成果仍进入 Verifier，是否通过由冻结验收条件决定。
+Research 收尾只生成有界结论与来源 ID，再由程序补入真实 Observation 中的 URL 和标题，不复制整篇网页。结果整理失败与工具预算耗尽分别诊断；不能因整理失败再次搜索。已经完成整理、具有证据的部分研究成果仍进入 Verifier，Supervisor 根据审核意见判断是否接受或带限制交付。
 
 全部预算可通过 `.env.example` 中的 `TIKI_OUTPUT_*`、`TIKI_BUDGET_*` 配置。更换模型时应同时检查真实窗口、输出能力和成本，而不是只提高循环次数。详见 [执行预算与进展策略](docs/execution-policy.md)。
 

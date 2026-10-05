@@ -357,7 +357,8 @@ class TikiWorkflowAdapter:
                     scope=scope,
                     source="workflow_adapter",
                     correlation_id=report.result_id,
-                    message=f"{agent} verification passed={report.passed}",
+                    message=(f"{agent} 审核意见：{'符合条件' if report.passed else '存在缺口'}；待 Supervisor 验收"
+                             if report.advisory else f"{agent} verification passed={report.passed}"),
                     data=report.model_dump(mode="json"),
                 )
 

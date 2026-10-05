@@ -41,6 +41,7 @@ ApplicationEventType = Literal[
     "handoff_created",
     "specialist_result",
     "verification_completed",
+    "result_reviewed",
     "workflow_retried",
     "workflow_failed",
     "workflow_completed",
