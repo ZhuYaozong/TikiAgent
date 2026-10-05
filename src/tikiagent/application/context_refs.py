@@ -34,6 +34,6 @@ class SessionContextReferenceProvider:
                 for linked in record.refs:
                     source = history.get_by_id(linked)
                     if (source is not None and source.session_id == session_id and linked not in refs
-                            and source.record_type in {"handoff", "result", "verification"} and len(refs) < 24):
+                            and source.record_type in {"handoff", "result", "verification", "review"} and len(refs) < 24):
                         refs.append(linked)
         return refs

@@ -47,7 +47,8 @@ def test_unchanged_protocols_match_v1_and_new_execution_fields_are_optional() ->
     expected = {
         "approval": "34851dd81eeda4df526099bf60576c0ba1c54d7ab72f69177e60a2da72a23818",
         "tool_result": "7f49049b68c1d1ee3d8eb5f5f501eaf1ea64ea9cd08c879ea23a8b645d4ce9e2",
-        "history": "479732d958f0080ba7d6280977c744b071d4cca655501cc4e2804c809b25adc9",
+        # 只扩展 record_type 枚举支持 review；旧 JSONL 仍可直接读取（见验收恢复测试）。
+        "history": "d161ce9c2f4541a7463ed680b8809a48ddda09afd05827360217996fa7a741c6",
     }
     models = {
         "approval": ApprovalRequest,

@@ -153,11 +153,11 @@ def test_context_and_api_reserve_same_output(tmp_path):
 
 
 def test_redelegation_requires_concrete_change_and_is_bounded():
-    from test_planning_supervisor import workflow, plan, delegate, stop, call, Gate
+    from test_planning_supervisor import workflow, plan, delegate, review, stop, call, Gate
     retry = call("delegate_task", {"todo_id": "a", "instruction": "补充文件取证", "reason": "补证",
         "missing_evidence": "缺少文件内容", "strategy_change": "直接读取文件",
         "expected_evidence": "文件内容及路径"}, "retry-a")
-    model, code, graph = workflow([plan("a"), delegate("a"), delegate("a"), retry, retry, stop()], gate=Gate(False))
+    model, code, graph = workflow([plan("a"), delegate("a"), review("a", "request_changes"), delegate("a"), retry, review("a", "request_changes"), retry, stop()], gate=Gate(False))
     result = graph.invoke("核实本地文件")
     assert len(code.calls) == 2
     assert result["delegation_count"] == 2

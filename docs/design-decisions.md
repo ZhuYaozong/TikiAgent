@@ -12,7 +12,7 @@ handoff_id
 subject_agent
 ```
 
-Supervisor FINISH 只认可每个 Todo 的最新 Result，以及与该 Result 身份完全匹配、覆盖冻结验收条件的 PASS Verification。旧结果的 PASS 不能验证新 Result，Verifier 也不能绕过 Supervisor 直接结束 Workflow。
+正式 Supervisor FINISH 只认可每个 Todo 的最新 Result、身份匹配的审核报告，以及绑定这条身份链的 Supervisor 接受决定。Verifier 的 PASS/FAIL 是符合性意见，不直接完成或失败 Todo；Supervisor 可以明确带限制接受质量不足的有用交付，但不能覆盖身份、证据真实性、权限与实际文件边界。限制保存在 History/TaskBoard，最终回答必须披露。旧接受决定不能用于新 Result，Verifier 也不能绕过 Supervisor 直接结束 Workflow。结构化基线继续使用原 PASS 门控。
 
 ## 两层 Agent Context
 

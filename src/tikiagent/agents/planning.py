@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from tikiagent.context.memory.local import LocalMemoryManager
 from tikiagent.context.memory.models import LocalMemory
 from tikiagent.context.models import ContextRequest, TaskBoard, TodoItem
+from tikiagent.context.memory.models import HistoryRecord
+from tikiagent.context.task_board import record_review
 from tikiagent.context.preparation import ContextRuntime
 from tikiagent.context.projections import verification_view
 from tikiagent.harness.execution import ExecutionHarness
@@ -21,6 +23,7 @@ from tikiagent.tools.models import ToolError, ToolExecutionError, ToolResult
 from tikiagent.tools.registry import RegisteredTool, ToolRegistry
 from tikiagent.agents.capabilities import capability_prompt, supports
 from tikiagent.orchestration.requirements import AcceptanceCriterion, Capability, DeliveryMode
+from tikiagent.orchestration.requirements import ResultReview, ReviewAction, review_blockers, review_limitations
 from tikiagent.runtime.lifecycle import complete_once, final_context
 from tikiagent.harness.persistence.finalization import FinalizationLedger
 from tikiagent.providers.llm.openai_compatible import ModelOutputError
@@ -69,7 +72,17 @@ class EndArgs(Arguments):
     reason: str = Field(min_length=1, max_length=2000)
 
 
-CONTROL_TOOLS = {"delegate_task", "finish_task", "stop_task"}
+class ReviewArgs(Arguments):
+    todo_id: str = Field(min_length=1)
+    result_id: str = Field(min_length=1)
+    handoff_id: str = Field(min_length=1)
+    verification_id: str = Field(min_length=1)
+    action: ReviewAction
+    reason: str = Field(min_length=1, max_length=600)
+    limitations: list[str] = Field(default_factory=list, max_length=12)
+
+
+CONTROL_TOOLS = {"review_result", "delegate_task", "finish_task", "stop_task"}
 
 
 class PlanningSupervisorAgent:
@@ -87,7 +100,7 @@ class PlanningSupervisorAgent:
         self.observer = observer
         self.finalizations = finalizations or FinalizationLedger()
 
-    def advance(self, state, *, history_store, context_builder, finish_guard, available_agents):
+    def advance(self, state, *, history_store, context_builder, finish_guard, available_agents, artifact_guard=None):
         working = dict(state)
         runtime = deepcopy(state.get("supervisor_runtime", {}))
         # 跨委派/审批恢复保留最严格上限，改变启动配置不能补充已消费预算。
@@ -217,12 +230,52 @@ class PlanningSupervisorAgent:
             dependency_refs = [
                 ref for dependency in todo.depends_on
                 for ref in (working["task_board"].items[dependency].result_id,
-                            working["task_board"].items[dependency].verification_id) if ref
+                            working["task_board"].items[dependency].verification_id,
+                            working["task_board"].items[dependency].review.review_id if working["task_board"].items[dependency].review else None) if ref
             ]
-            refs = list(dict.fromkeys([*dependency_refs, *context_refs, *[r for r in (todo.result_id, todo.verification_id) if r]]))
+            refs = list(dict.fromkeys([*dependency_refs, *context_refs, *[r for r in (todo.result_id, todo.verification_id, todo.review.review_id if todo.review else None) if r]]))
             chosen = SupervisorDecision(action="delegate", target_agent=todo.owner, todo_id=todo_id,
                                         instruction=instruction, reason=reason, context_refs=refs)
             return {"scheduled": True, "todo_id": todo_id}
+
+        def review_result(todo_id, result_id, handoff_id, verification_id, action, reason, limitations):
+            nonlocal chosen
+            todo = working["task_board"].items.get(todo_id)
+            if todo is None or todo.status != "awaiting_review":
+                fail("review_not_pending", "Todo 不在待验收状态；不能重复消费验收决定")
+            if (todo.result_id, todo.handoff_id, todo.verification_id) != (result_id, handoff_id, verification_id):
+                fail("review_identity_mismatch", "必须审阅该 Todo 最新 Result/Handoff/Verification")
+            report = working.get("verifications_by_id", {}).get(verification_id, {})
+            result = working.get("results_by_id", {}).get(result_id, {})
+            if action in {"accept", "accept_with_limitations"}:
+                blockers = review_blockers(todo, result, report)
+                if artifact_guard:
+                    blockers.extend(artifact_guard(todo, result))
+                if blockers:
+                    fail("review_hard_blocked", "; ".join(blockers))
+                gaps = review_limitations(todo, report)
+                if action == "accept" and gaps:
+                    fail("review_limitations_required", "存在未满足条件；请明确带限制接受，或要求补做/停止")
+                if action == "accept" and limitations:
+                    fail("invalid_review", "提供限制时必须选择 accept_with_limitations")
+                if action == "accept_with_limitations" and not any(s.strip() for s in limitations):
+                    fail("review_limitations_required", "带限制接受必须说明为什么已有交付仍有价值及缺口")
+                limitations = list(dict.fromkeys([*gaps, *[s.strip()[:500] for s in limitations if s.strip()]]))
+            elif limitations:
+                fail("invalid_review", "限制仅用于接受决定；补做/停止原因写入 reason")
+            review = ResultReview(todo_id=todo_id, result_id=result_id, handoff_id=handoff_id,
+                verification_id=verification_id, action=action, reason=reason, limitations=limitations)
+            board = record_review(working["task_board"], review)
+            # 先保存不可变审阅事实，再公布新 TaskBoard；审批事实仍只在 Harness。
+            history_store.append(HistoryRecord(record_id=review.review_id, task_id=state["task_id"],
+                session_id=state["session_id"], record_type="review", producer="supervisor",
+                summary=f"Supervisor 验收 {todo_id}：{action}；{reason}",
+                payload=review.model_dump(mode="json"), refs=[result_id, handoff_id, verification_id]))
+            working["task_board"] = board
+            self._emit("result_reviewed", working, review.review_id, review.model_dump(mode="json"))
+            if action == "stop":
+                chosen = SupervisorDecision(action="stop", target_agent=None, instruction="", reason=reason)
+            return review.model_dump(mode="json")
 
         def finish_task(reason):
             nonlocal chosen
@@ -242,7 +295,8 @@ class PlanningSupervisorAgent:
             ("read_history", "读取作用域内 History 原文分页；记录 ID 来自当前上下文", HistoryArgs, read_history),
             ("update_plan", "创建或调整具体 Todo；保留已有 ID、原始验收和已执行事实", PlanArgs, update_plan),
             ("delegate_task", "按 todo_id 委派；必须单独调用，Graph 返回 Result 和 Verification 后再继续", DelegateArgs, delegate_task),
-            ("finish_task", "请求完成；所有 Todo 最新结果必须有匹配 PASS；必须单独调用", EndArgs, finish_task),
+            ("review_result", "审阅最新交付：accept / accept_with_limitations / request_changes / stop；审核意见不决定任务状态；必须单独调用", ReviewArgs, review_result),
+            ("finish_task", "请求完成；所有 Todo 最新结果必须有 Supervisor 接受决定；带限制接受必须披露缺口；必须单独调用", EndArgs, finish_task),
             ("stop_task", "无法继续时说明具体阻塞原因并停止；必须单独调用", EndArgs, stop_task),
         ]:
             registry.register(RegisteredTool(name, description, args, handler))
@@ -253,11 +307,11 @@ class PlanningSupervisorAgent:
             runtime["steps"] = runtime.get("steps", 0) + 1
             refs = list(dict.fromkeys([*[
                 ref for todo in reversed(list(working["task_board"].items.values()))
-                for ref in (todo.handoff_id, todo.result_id, todo.verification_id) if ref
+                for ref in (todo.handoff_id, todo.result_id, todo.verification_id, todo.review.review_id if todo.review else None) if ref
             ], *working["session_context_refs"]]))
             context = context_builder.build(
                 request=ContextRequest(agent="supervisor", task_id=state["task_id"], session_id=state["session_id"],
-                                       phase="orchestration", instruction="观察最新事实，自主规划、委派、完成或停止。\n" + capability_prompt(available_agents), context_refs=refs),
+                                       phase="orchestration", instruction="观察最新事实；待验收 Todo 先 review_result，自主决定接受、带限制接受、补做或停止。\n" + capability_prompt(available_agents), context_refs=refs),
                 task=state["task"], acceptance_criteria=working["acceptance_criteria"], task_board=working["task_board"],
             )
             try:
@@ -330,7 +384,7 @@ class PlanningSupervisorAgent:
                 diagnosis = {}
                 try:
                     request = ContextRequest(agent="supervisor", task_id=state["task_id"], session_id=state["session_id"],
-                        phase="orchestration", instruction="执行预算已耗尽；仅允许单独调用 finish_task 或 stop_task 总结已有事实，不得委派或修改计划。", context_refs=refs if 'refs' in locals() else [])
+                        phase="orchestration", instruction=f"规划进入最终收尾，原因：{reason}。仅允许单独调用 finish_task 或 stop_task 总结已有事实，不得委派或修改计划；没有接受决定的 Todo 不能声称完成。", context_refs=refs if 'refs' in locals() else [])
                     context = context_builder.build(request=request, task=state["task"],
                         acceptance_criteria=working["acceptance_criteria"], task_board=working["task_board"])
                     final_registry = ToolRegistry()
@@ -358,6 +412,7 @@ class PlanningSupervisorAgent:
             runtime["compression_calls"] = engine.calls
         updates = {key: working[key] for key in ("supervisor_plan", "required_specialists", "acceptance_criteria", "task_board")}
         updates["supervisor_runtime"] = runtime
+        updates["history_cursor"] = history_store.cursor()
         return chosen, updates
 
     def complete_delegation(self, state, handoff, result, report):

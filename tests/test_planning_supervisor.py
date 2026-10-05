@@ -38,6 +38,23 @@ def stop():
     return call("stop_task", {"reason": "已有明确阻塞，停止重试"})
 
 
+def review(key, action="accept", *, limitations=None, overrides=None):
+    """测试模型读取真实委派 Observation，不能预先假定动态结果 ID。"""
+    def response(messages):
+        for message in reversed(messages):
+            if message.get("role") != "tool":
+                continue
+            data = json.loads(message["content"])
+            output = data.get("output") or {}
+            if data.get("tool_name") == "delegate_task" and output.get("todo_id") == key:
+                args = {"todo_id": key, "result_id": output["result_id"], "handoff_id": output["handoff_id"],
+                    "verification_id": output["verification"]["verification_id"], "action": action,
+                    "reason": "依据已取得交付作出明确验收决定", "limitations": limitations or []}
+                return call("review_result", {**args, **(overrides or {})})
+        raise AssertionError("没有找到对应 Todo 的返回观察")
+    return response
+
+
 class Script:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -45,7 +62,8 @@ class Script:
 
     def complete(self, *, messages, tool_schemas):
         self.requests.append(messages)
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        return response(messages) if callable(response) else response
 
 
 class Code:
@@ -86,7 +104,7 @@ def workflow(responses, *, gate=None, history=None, max_steps=32):
 
 
 def test_same_agent_multiple_todos_keep_separate_verified_results():
-    model, code, graph = workflow([plan("a", "b"), delegate("a"), delegate("b"), call("finish_task", {"reason": "都通过"})])
+    model, code, graph = workflow([plan("a", "b"), delegate("a"), review("a"), delegate("b"), review("b"), call("finish_task", {"reason": "都通过"})])
     result = graph.invoke("交付 a 和 b", session_id="s")
     assert result["status"] == "completed"
     assert [h.todo_id for h in code.calls] == ["a", "b"]
@@ -193,7 +211,7 @@ def test_pending_supervisor_delegation_survives_approval_resume(tmp_path):
     assert len(cp.workflow_snapshot.state["supervisor_runtime"]["local_memory"]["recent_interactions"]) == 1
     _, second = build_workflow(tmp_path, ScriptedModel([final_response()]))
     second.verification_gate = Gate()
-    model = Script([call("finish_task", {"reason": "已验证"})])
+    model = Script([review("a"), call("finish_task", {"reason": "已验证"})])
     second.supervisor = PlanningSupervisorAgent(model)
     approval = cp.approval_request
     result = second.resume(cp.checkpoint_id, expected_revision=cp.revision,
@@ -201,13 +219,13 @@ def test_pending_supervisor_delegation_survives_approval_resume(tmp_path):
                                                               scope=approval.scope, fingerprint=approval.fingerprint))
     assert result["status"] == "completed" and result["delegation_count"] == 1
     assert result["supervisor_runtime"]["pending"] is None
-    assert result["supervisor_runtime"]["steps"] == 3
+    assert result["supervisor_runtime"]["steps"] == 4
     assert "delegate-a" in str(model.requests[0])
     assert workspace.resolve("output.txt").read_text() == "graph resumed"
 
 
 def test_pass_for_another_todo_cannot_finish_first_todo():
-    _, _, graph = workflow([plan("a", "b"), delegate("a"), delegate("b"), call("finish_task", {"reason": "都通过"})])
+    _, _, graph = workflow([plan("a", "b"), delegate("a"), review("a"), delegate("b"), review("b"), call("finish_task", {"reason": "都通过"})])
     result = graph.invoke("两项工作")
     tampered = deepcopy(result)
     first, second = tampered["task_board"].items.values()
@@ -219,7 +237,7 @@ def test_pass_for_another_todo_cannot_finish_first_todo():
 def test_old_snapshot_migrates_identity_maps_without_trace():
     from tikiagent.orchestration.state import serialize_tiki_state, restore_tiki_state
 
-    _, _, graph = workflow([plan("a"), delegate("a"), call("finish_task", {"reason": "通过"})])
+    _, _, graph = workflow([plan("a"), delegate("a"), review("a"), call("finish_task", {"reason": "通过"})])
     result = graph.invoke("一项工作")
     payload = serialize_tiki_state(result)
     for key in ("supervisor_runtime", "results_by_id", "verifications_by_id"):
@@ -233,7 +251,7 @@ def test_old_snapshot_migrates_identity_maps_without_trace():
 
 
 def test_global_delegation_budget_is_not_reset_by_new_todo():
-    model, code, graph = workflow([plan("a", "b"), delegate("a"), delegate("b"), stop()])
+    model, code, graph = workflow([plan("a", "b"), delegate("a"), review("a"), delegate("b"), stop()])
     graph.max_delegations = 1
     result = graph.invoke("两项工作")
     assert result["delegation_count"] == 1 and len(code.calls) == 1
@@ -248,7 +266,7 @@ def test_hybrid_dependency_automatically_transfers_result_not_private_messages()
     setup = call("update_plan", {"goal": "调研后写页面", "acceptance_criteria": ["页面使用调研事实"],
         "todos": [{"todo_id": "research", "owner": "research_agent", "description": "调研"},
                   {"todo_id": "code", "owner": "code_agent", "description": "创建页面", "depends_on": ["research"]}]})
-    model, code, graph = workflow([setup, delegate("research"), delegate("code"), call("finish_task", {"reason": "完成"})])
+    model, code, graph = workflow([setup, delegate("research"), review("research"), delegate("code"), review("code"), call("finish_task", {"reason": "完成"})])
     graph.research_agent = Research()
     state = graph.invoke("调研后写页面")
     assert state["status"] == "completed"

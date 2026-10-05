@@ -128,6 +128,7 @@ class TikiState(TypedDict):
     supervisor_decision: SupervisorDecision | None
     # 外层规划 Agent 的私有消息与待委派调用，随 Workflow Snapshot 恢复。
     supervisor_runtime: NotRequired[dict[str, Any]]
+    requires_supervisor_review: NotRequired[bool]
     results_by_id: NotRequired[dict[str, dict[str, Any]]]
     verifications_by_id: NotRequired[dict[str, dict[str, Any]]]
     delegation_count: int
@@ -185,6 +186,7 @@ def restore_tiki_state(payload: dict[str, Any]) -> TikiState:
         "supervisor_runtime": {},
         "results_by_id": {},
         "verifications_by_id": {},
+        "requires_supervisor_review": bool(payload.get("supervisor_runtime")),
         **payload,
     }
     # 老快照只有按 Agent 保存的最新结果；按原身份建立索引，不推测额外历史。
@@ -192,7 +194,16 @@ def restore_tiki_state(payload: dict[str, Any]) -> TikiState:
         migrated["results_by_id"] = {r["result_id"]: r for r in payload.get("specialist_results", {}).values() if r.get("result_id")}
     if not migrated["verifications_by_id"]:
         migrated["verifications_by_id"] = {r["verification_id"]: r for r in payload.get("specialist_verifications", {}).values() if r.get("verification_id")}
-    return _TIKI_STATE_ADAPTER.validate_python(migrated)
+    restored = _TIKI_STATE_ADAPTER.validate_python(migrated)
+    if restored.get("requires_supervisor_review"):
+        # 旧正式快照的 PASS 不是 Supervisor 决定；重新进入待审，不伪造接受事实。
+        board = restored["task_board"]
+        restored["task_board"] = board.model_copy(update={"items": {
+            key: item.model_copy(update={"status": "awaiting_review"})
+            if item.status == "completed" and item.review is None and item.verification_id else item
+            for key, item in board.items.items()
+        }})
+    return restored
 
 
 def create_initial_state(

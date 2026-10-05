@@ -11,16 +11,19 @@ Supervisor 可以创建多个 Todo，同一个 Specialist 可以负责多项。�
 | `update_plan` | 更新尚未执行的步骤或添加工作项，状态由程序保留 |
 | `read_history` | 分页读取当前任务、或 Application 显式授权的同 Session 历史 |
 | `delegate_task` | 校验 Todo、依赖、引用和预算后把控制权交回 Graph |
-| `finish_task` | 检查每个 Todo 的最新 Result/Handoff/Verification 身份链 |
+| `review_result` | 审阅最新结果，接受、带限制接受、补做或停止；记录绑定身份的验收事实 |
+| `finish_task` | 检查每个 Todo 最新身份链与 Supervisor 接受决定，披露未满足项 |
 | `stop_task` | 记录阻塞原因，停止继续委派 |
 
-这些工具经过 Exposure、参数验证和独立允许列表的 ExecutionHarness，不向 Supervisor 暴露文件修改或命令执行工具。委派和结束操作必须独立调用；包含这些操作的多调用批次会整体拒绝，避免执行部分动作后丢失其余调用。
+这些工具经过 Exposure、参数验证和独立允许列表的 ExecutionHarness，不向 Supervisor 暴露文件修改或命令执行工具。验收、委派和结束操作必须独立调用；包含这些操作的多调用批次会整体拒绝，避免执行部分动作后丢失其余调用。
 
 模型生成的 `delegate_task` 先保存在 `supervisor_runtime.pending`，尚不形成完整 LocalMemory 交互。Graph 创建并绑定 Handoff，运行 Specialist，再经过 Verifier。结果回来后，程序将 Result 摘要、准确身份及 Verification 作为对应 ToolResult，补成完整交互。子 Agent 的内部消息不传给 Supervisor。
 
-`results_by_id`、`verifications_by_id` 保存身份索引；按 Agent 的 `specialist_results` 继续作为最新结果视图。完成检查和多 Todo 最终回答均逐项查验，不能用另一个 Todo 的 PASS 代替。
+`results_by_id`、`verifications_by_id` 保存身份索引；按 Agent 的 `specialist_results` 继续作为最新结果视图。每个 Todo 的 `review` 保存最新 Supervisor 决定；每次决定另写一条 `review` 类型 History，重试只清除当前 Todo 的旧决定，不删除历史。完成检查和多 Todo 最终回答均逐项查验，不能用另一个 Todo 的接受决定代替。
 
-Supervisor 默认最多 32 次模型步骤、64 个编排调用；相同工具和错误类别连续失败三次停止，成功调用清除连续失败计数。另有 Workflow 委派预算和 CodeAgent 工具预算。Verifier 提供失败类别和可重试提示；模型可以据此调整或停止，硬预算不能被重新规划绕过。
+Verifier 返回后 Todo 进入 `awaiting_review`，`passed` 不直接改变完成状态。Supervisor 选择 `accept`、`accept_with_limitations`、`request_changes` 或 `stop`。审核不足或未完成时，只能明确带限制接受，程序自动保留未满足项/未审核原因；不存在的文件、非法引用、来源或身份错配、未形成交付的权限阻塞仍不能接受。依赖任务自动接收结果、报告与验收记录引用，能看见前置步骤的限制，而不继承内部 messages。
+
+正式应用默认 Supervisor 最多 12 次工作步骤、20 个编排调用，另有一次 finish/stop 收尾；相同工具和错误类别连续失败三次停止，成功调用清除连续失败计数。另有 Workflow 委派预算和 CodeAgent 工具预算。Verifier 提供失败类别和可重试提示；模型可以据此验收、调整或停止，硬预算不能被重新规划绕过。
 
 ## 输入排列与隔离
 
@@ -59,7 +62,7 @@ CodeAgent 审批暂停时，现有 Checkpoint 的 WorkflowResumeSnapshot 同时�
 
 这仍是现有工具执行检查点的恢复语义。未实现每个 Workflow 节点自动落盘，也不保证 ResearchAgent 在任意进程崩溃点恢复。Trace 只用于审计，不参与恢复决策。
 
-成功 Finalization 后清空 Supervisor 的临时 LocalMemory 与摘要缓存，保留 TaskBoard、结果、验证、History 和预算统计。
+成功 Finalization 后清空 Supervisor 的临时 LocalMemory 与摘要缓存，保留 TaskBoard（含 review）、结果、审核报告、History 和预算统计。旧正式 Checkpoint 若只有 PASS 而没有 review，恢复后进入待验收，不自动补造接受决定。旧基线快照仍按原契约运行。
 
 ## 观察与验证
 

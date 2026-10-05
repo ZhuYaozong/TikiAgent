@@ -140,7 +140,12 @@ class TuiEventAdapter:
         if kind == "tool_execution_started":
             return {"status": "executing", "busy": True}
         if kind == "verification_completed":
+            if data.get("advisory"):
+                return {"verification": "待验收"}
             return {"verification": "PASS" if data.get("passed") is True else "FAIL"}
+        if kind == "result_reviewed":
+            labels = {"accept": "已接受", "accept_with_limitations": "含限制", "request_changes": "需补做", "stop": "已停止"}
+            return {"verification": labels.get(data.get("action"), "待验收")}
         if kind == "recovery_required":
             return {"status": "recovery_required", "busy": False,
                     "checkpoint_revision": _optional_int(data.get("revision")),
@@ -165,7 +170,7 @@ class TuiEventAdapter:
             "agent_started": "agent", "handoff_created": "agent", "specialist_result": "agent",
             "tool_call_requested": "tool", "tool_execution_started": "tool", "tool_result_received": "tool",
             "approval_required": "approval", "approval_decided": "approval",
-            "verification_completed": "verification", "final_answer": "final",
+            "verification_completed": "verification", "result_reviewed": "routing", "final_answer": "final",
         }
         return TimelineItem(sequence=event.sequence, kind=mapping.get(event.event_type, "system"),
                             title=event.event_type.replace("_", " ").title(), detail=event.message)

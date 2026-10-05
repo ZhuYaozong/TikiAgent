@@ -5,6 +5,24 @@ from tikiagent.interfaces.tui.commands import parse_command
 from tikiagent.interfaces.tui.models import TuiViewState
 
 
+def test_advisory_audit_is_not_displayed_as_task_failure():
+    bus = EventBus()
+    scope = EventScope(session_id="s", task_id="t")
+    adapter = TuiEventAdapter()
+    state = adapter.reduce(TuiViewState(), bus.emit("verification_completed", scope=scope,
+        source="workflow_adapter", correlation_id="r", message="审核存在缺口",
+        data={"advisory": True, "passed": False, "failures": ["日期无法确认"]}))
+    assert state.verification == "待验收" and state.feed[-1].kind == "verification"
+    assert "待 Supervisor 决定" in state.feed[-1].summary
+    assert "日期无法确认" in state.feed[-1].detail
+    state = adapter.reduce(state, bus.emit("result_reviewed", scope=scope,
+        source="workflow_runtime_adapter", correlation_id="review", message="Supervisor 验收",
+        data={"action": "accept_with_limitations", "reason": "已有内容可用", "limitations": ["日期无法确认"]}))
+    assert state.verification == "含限制"
+    assert state.feed[-1].summary == "带限制接受"
+    assert "日期无法确认" in state.feed[-1].detail
+
+
 def test_event_adapter_projects_public_events_and_rejects_bad_order() -> None:
     bus = EventBus(stream_id="stream-1")
     scope = EventScope(session_id="session-1", workspace_id="workspace-1", task_id="task-1")

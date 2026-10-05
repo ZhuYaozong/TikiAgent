@@ -50,6 +50,7 @@ from tikiagent.providers.search.tavily import TavilyProvider
 from tikiagent.runtime.resumable import ResumableReActAgent
 from tikiagent.tools.commands import register_command_tool
 from tikiagent.tools.dispatcher import Dispatcher
+from tikiagent.tools.models import ToolExecutionError
 from tikiagent.tools.files import build_file_registry, build_read_only_file_registry
 from tikiagent.tools.web import build_web_registry
 from tikiagent.tools.python_environment import register_python_environment_tools
@@ -279,6 +280,22 @@ class ApplicationRuntimeFactory:
             research_verifier=verifier,
             code_verifier=verifier,
         )
+        def artifact_guard(todo, result):
+            """接受交付不豁免机械边界：产物必须真实存在且位于 Workspace。"""
+            if todo.owner != "code_agent" or todo.delivery_mode != "artifact":
+                return []
+            files = result.get("changed_files", [])
+            if not files:
+                return ["文件交付未提供实际产物路径"]
+            blockers = []
+            for path in files:
+                try:
+                    if not workspace.resolve(path).is_file():
+                        blockers.append(f"交付文件不存在：{path}")
+                except (ToolExecutionError, OSError, ValueError):
+                    blockers.append(f"交付文件不在 Workspace 边界内：{path}")
+            return blockers
+
         workflow = MultiAgentWorkflow(
             supervisor=PlanningSupervisorAgent(model("supervisor"), context_runtime=context_runtime(), observer=observe, finalizations=finalizations,
                 max_steps=self.policy.supervisor_steps, max_tool_calls=self.policy.supervisor_tools),
@@ -286,6 +303,7 @@ class ApplicationRuntimeFactory:
                 policy=self.policy, request_budget=self.request_budget),
             code_agent=code_agent,
             verification_gate=gate,
+            artifact_guard=artifact_guard,
             workspace_id=workspace_id,
             max_delegations=self.policy.delegations,
             history_store=JsonlHistoryStore(
