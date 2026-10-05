@@ -3,19 +3,26 @@ import os
 from pydantic import BaseModel, Field
 
 
+# 提示词和结构化输出共用字符限制，避免模型遵循提示词后仍被校验拒绝。
+RESEARCH_SUMMARY_MAX_CHARS = 2000
+RESEARCH_FINDING_MAX_CHARS = 800
+RESEARCH_MAX_FINDINGS = 12
+
+
 class AgentPolicy(BaseModel):
     supervisor_steps: int = Field(default=20, ge=1)
     supervisor_tools: int = Field(default=32, ge=1)
-    research_steps: int = Field(default=10, ge=1)
-    research_searches: int = Field(default=4, ge=1)
-    research_extracts: int = Field(default=6, ge=1)
+    # 扩大研究工作预算，但仍保留每次委派和整个任务的有限上限。
+    research_steps: int = Field(default=16, ge=1)
+    research_searches: int = Field(default=8, ge=1)
+    research_extracts: int = Field(default=10, ge=1)
     code_steps: int = Field(default=16, ge=1)
     code_tools: int = Field(default=32, ge=1)
     verifier_steps: int = Field(default=6, ge=1)
     verifier_tools: int = Field(default=10, ge=1)
     delegations: int = Field(default=5, ge=1)
     task_code_tools: int = Field(default=64, ge=1)
-    task_web_tools: int = Field(default=20, ge=1)
+    task_web_tools: int = Field(default=40, ge=1)
     model_requests: int = Field(default=128, ge=16)
     repeat_limit: int = Field(default=2, ge=1)
 

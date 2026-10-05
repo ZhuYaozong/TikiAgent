@@ -2,6 +2,11 @@
 
 from tikiagent.context.models import ContextProfile
 from tikiagent.context.schema import ContextAgentName
+from tikiagent.runtime.policy import (
+    RESEARCH_SUMMARY_MAX_CHARS,
+    RESEARCH_FINDING_MAX_CHARS,
+    RESEARCH_MAX_FINDINGS,
+)
 
 
 DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
@@ -63,7 +68,9 @@ DEFAULT_CONTEXT_PROFILES: dict[ContextAgentName, ContextProfile] = {
             "research_synthesis": [
                 "只使用已取得的工具证据整理结构化结果",
                 "来源 URL 不得超出搜索证据",
-                "仅输出短摘要、有限结论和source_id，不复制网页正文、URL或长snippet；总述不超过300字",
+                "仅输出研究摘要、有限结论和source_id，不复制网页正文、URL或长snippet；"
+                f"总述不超过{RESEARCH_SUMMARY_MAX_CHARS}字符，结论最多{RESEARCH_MAX_FINDINGS}条，"
+                f"每条不超过{RESEARCH_FINDING_MAX_CHARS}字符",
             ],
         },
         tool_names_by_phase={

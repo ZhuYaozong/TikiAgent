@@ -94,6 +94,11 @@ def test_factory_injects_policy_and_preserves_context_overrides(tmp_path, monkey
     assert graph.code_agent.agent.max_tool_calls == 32
     assert graph.supervisor.max_steps == 20 and graph.supervisor.max_tool_calls == 32
     assert factory.policy == AgentPolicy(code_steps=17)
+    # 正式工厂把扩容配置传给懒加载 ResearchAgent，而不是借用构造器旧默认值。
+    assert graph.research_agent.policy.research_steps == 16
+    assert graph.research_agent.policy.research_searches == 8
+    assert graph.research_agent.policy.research_extracts == 10
+    assert graph.research_agent.policy.task_web_tools == 40
     runtime = graph.code_agent.agent.context_runtime
     for phase, output in [("coding", 32768), ("finalization", 16384)]:
         prepared = runtime.prepare(base_context=BaseContext(agent="code_agent", working_memory=WorkingMemory(

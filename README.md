@@ -130,6 +130,8 @@ TIKI_TAVILY_BASE_URL=https://api.tavily.com
 
 模型请求默认超时为 60 秒、最多重试 1 次，可用以上两个可选配置调整。模型服务的 `insufficient_quota` 错误需要在服务控制台处理额度；修改项目步数不会解决配额不足。
 
+ResearchAgent 每次委派默认最多 16 轮、8 次搜索和 10 次网页提取；整个任务最多 40 次联网请求，可通过 `.env.example` 中的 `TIKI_BUDGET_RESEARCH_*` 和 `TIKI_BUDGET_TASK_WEB_TOOLS` 调整。研究结果总述最多 2000 字符、结论最多 12 条且每条最多 800 字符；达到工作上限后仍保留一次总结，不放开重复请求保护。最终对话回答另有 7600 字符保护，因此研究结果上限不等于终端展示长度。配置修改后需重启程序；已有任务的持久化额度不会被扩容，新任务使用新额度。详见 [执行预算与进展策略](docs/execution-policy.md)。
+
 `TIKI_LLM_CONTEXT_LIMIT` 是应用主动使用的总窗口，不是供应商最大能力。正式应用通过 `TIKI_OUTPUT_<STAGE>` 分阶段预留输出；`TIKI_LLM_MAX_OUTPUT_TOKENS` 只作为未分阶段客户端的默认值。上下文接近预算时会额外调用模型总结旧历史或旧交互，原始任务约束与 TaskBoard 不参与摘要。摘要失败不会覆盖旧消息，仍超限时明确停止。
 
 DeepSeek 使用分阶段思考强度；`TIKI_LLM_API_STYLE=auto` 只自动识别官方 `api.deepseek.com`。连接 vLLM 或其他兼容接口时设置 `openai`，不发送 DeepSeek 专用参数。中转站只有明确支持这些参数时才使用 `deepseek`。
