@@ -25,6 +25,8 @@ TiKiAgent 与 JobPilot 的跨服务协议基线见 [B02 契约与验证](docs/co
 
 B03 身份兼容性验证见 [实测报告](docs/platform/identity-spike.md) 和 [独立复现工程](integration_tests/platform/identity_spike/README.md)，覆盖 OIDC、受托续期、用户停用与密钥轮换；现有生产认证入口尚未接入。
 
+B04 检查点与租约隔离验证见 [实测报告](docs/platform/checkpoint-spike.md) 和 [独立复现工程](integration_tests/platform/checkpoint_spike/README.md)，两套依赖组合各通过 36 项场景；生产持久化接入仍属于 T04/J05。
+
 ## Features
 
 | 能力 | 说明 |

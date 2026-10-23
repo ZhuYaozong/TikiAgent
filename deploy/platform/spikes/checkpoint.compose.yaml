@@ -1,0 +1,17 @@
+name: tiki-b04-checkpoint
+services:
+  postgres:
+    image: postgres:16@sha256:78df81b1442dcc764c1104154da7162635e40cfffe67579c42a1c1b96dfc209c
+    environment:
+      POSTGRES_USER: b04
+      POSTGRES_PASSWORD: disposable-b04
+      POSTGRES_DB: b04_checkpoint
+    ports:
+      - "127.0.0.1:38445:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U b04 -d b04_checkpoint"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

@@ -1,0 +1,38 @@
+name: Checkpoint and lease compatibility spike
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'integration_tests/platform/checkpoint_spike/**'
+      - 'deploy/platform/spikes/checkpoint.compose.yaml'
+      - '.github/workflows/checkpoint-spike.yml'
+permissions:
+  contents: read
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: tiki
+            python: '3.13'
+          - profile: jobpilot
+            python: '3.12'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --require-hashes -r integration_tests/platform/checkpoint_spike/requirements-${{ matrix.profile }}.lock
+      - run: python -u integration_tests/platform/checkpoint_spike/run.py
+      - name: Publish sanitized result
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-results-${{ matrix.profile }}
+          path: integration_tests/platform/checkpoint_spike/.runtime/results.json
+          if-no-files-found: error
+      - name: Stop disposable database
+        if: always()
+        run: docker compose -f deploy/platform/spikes/checkpoint.compose.yaml down
