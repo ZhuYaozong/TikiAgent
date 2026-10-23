@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.tikiagent.invalid/v1/identity",
+  "title": "identity v1",
+  "$ref": "#/$defs/identity",
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "properties": {
+        "principal_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "issuer": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "actor": {
+          "enum": [
+            "platform",
+            "tiki",
+            "jobpilot"
+          ]
+        },
+        "audience": {
+          "enum": [
+            "platform",
+            "tiki",
+            "jobpilot"
+          ]
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+          },
+          "maxItems": 100,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "principal_id",
+        "issuer",
+        "subject",
+        "actor",
+        "audience",
+        "scopes"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.tikiagent.invalid/v1/error",
+  "title": "error v1",
+  "$ref": "#/$defs/error",
+  "$defs": {
+    "error": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "code": {
+          "enum": [
+            "FORBIDDEN",
+            "AUTHENTICATION_REQUIRED",
+            "INPUT_REQUIRED",
+            "RESOURCE_VERSION_CONFLICT",
+            "SCHEMA_INVALID",
+            "UPSTREAM_UNAVAILABLE",
+            "RATE_LIMITED",
+            "BUDGET_EXHAUSTED",
+            "DEADLINE_EXCEEDED",
+            "EFFECT_UNKNOWN",
+            "IDEMPOTENCY_CONFLICT",
+            "REVISION_CONFLICT",
+            "INPUT_CONFLICT",
+            "NOT_FOUND",
+            "ALREADY_TERMINAL",
+            "UNSUPPORTED_VERSION",
+            "CURSOR_EXPIRED"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retry_after_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "effect_status": {
+          "enum": [
+            "none",
+            "confirmed",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "code",
+        "message",
+        "retryable",
+        "effect_status"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "EFFECT_UNKNOWN"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "retryable": {
+                "const": false
+              },
+              "effect_status": {
+                "const": "unknown"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
