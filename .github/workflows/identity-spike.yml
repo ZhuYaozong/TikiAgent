@@ -1,0 +1,36 @@
+name: Identity compatibility spike
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'integration_tests/platform/identity_spike/**'
+      - 'deploy/platform/spikes/identity.compose.yaml'
+      - '.github/workflows/identity-spike.yml'
+permissions:
+  contents: read
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: integration_tests/platform/identity_spike/java/pom.xml
+      - run: python -m pip install --require-hashes -r integration_tests/platform/identity_spike/requirements.lock
+      - run: python -u integration_tests/platform/identity_spike/run.py
+      - name: Publish sanitized result only
+        uses: actions/upload-artifact@v4
+        with:
+          name: identity-spike-results
+          path: integration_tests/platform/identity_spike/.runtime/results.json
+          if-no-files-found: error
+      - name: Stop disposable identity provider
+        if: always()
+        run: docker compose -f deploy/platform/spikes/identity.compose.yaml down

@@ -23,6 +23,8 @@ TikiAgent 使用 Supervisor 动态规划和委派任务，由 ResearchAgent 与 
 
 TiKiAgent 与 JobPilot 的跨服务协议基线见 [B02 契约与验证](docs/contracts/README.md)。该目录提供任务所有权、身份、命令、结果、事件、审批和预算的静态定义及 Python/Java 共用样例；现有运行时尚未接入这些协议。
 
+B03 身份兼容性验证见 [实测报告](docs/platform/identity-spike.md) 和 [独立复现工程](integration_tests/platform/identity_spike/README.md)，覆盖 OIDC、受托续期、用户停用与密钥轮换；现有生产认证入口尚未接入。
+
 ## Features
 
 | 能力 | 说明 |
