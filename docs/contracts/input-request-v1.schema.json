@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.tikiagent.invalid/v1/input-request",
+  "title": "input-request v1",
+  "$ref": "#/$defs/input_request",
+  "$defs": {
+    "input_request": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "input_request_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "principal_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "task_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "source": {
+          "enum": [
+            "tiki",
+            "jobpilot"
+          ]
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "wait_kind": {
+          "enum": [
+            "clarification",
+            "approval",
+            "authentication",
+            "reconciliation"
+          ]
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:[0-5]\\d(?:\\.\\d{1,6})?Z$"
+        },
+        "response_type": {
+          "enum": [
+            "text",
+            "approval_decision",
+            "authentication_reference",
+            "reconciliation_reference"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "input_request_id",
+        "principal_id",
+        "task_id",
+        "source",
+        "expected_revision",
+        "wait_kind",
+        "prompt",
+        "expires_at",
+        "response_type"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "wait_kind": {
+                "const": "clarification"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "response_type": {
+                "const": "text"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "wait_kind": {
+                "const": "approval"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "response_type": {
+                "const": "approval_decision"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "wait_kind": {
+                "const": "authentication"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "response_type": {
+                "const": "authentication_reference"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "wait_kind": {
+                "const": "reconciliation"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "response_type": {
+                "const": "reconciliation_reference"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

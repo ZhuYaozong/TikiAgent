@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.tikiagent.invalid/v1/agent-result",
+  "title": "agent-result v1",
+  "$ref": "#/$defs/agent_result",
+  "$defs": {
+    "agent_result": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "result_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "principal_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "platform_task_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "delegation_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "remote_task_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "domain_type": {
+          "const": "jobpilot"
+        },
+        "skill_id": {
+          "enum": [
+            "job.resume.read.v1",
+            "job.resume.tailor.v1"
+          ]
+        },
+        "delivery_status": {
+          "enum": [
+            "none",
+            "partial",
+            "ready"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact"
+          },
+          "maxItems": 100
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource"
+          },
+          "maxItems": 100
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxItems": 100
+        },
+        "operation_receipts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operation_receipt"
+          },
+          "maxItems": 100
+        },
+        "source_versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource"
+          },
+          "maxItems": 100
+        },
+        "usage": {
+          "$ref": "#/$defs/usage"
+        }
+      },
+      "required": [
+        "schema_version",
+        "result_id",
+        "principal_id",
+        "platform_task_id",
+        "run_id",
+        "delegation_id",
+        "remote_task_id",
+        "domain_type",
+        "skill_id",
+        "delivery_status",
+        "summary",
+        "artifacts",
+        "evidence_refs",
+        "limitations",
+        "operation_receipts",
+        "source_versions",
+        "usage"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "delivery_status": {
+                "const": "partial"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "limitations": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "delivery_status": {
+                "const": "ready"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "minItems": 1
+              },
+              "source_versions": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "resource": {
+          "$ref": "#/$defs/resource"
+        },
+        "kind": {
+          "enum": [
+            "resume_text",
+            "resume_preview",
+            "resume_version"
+          ]
+        },
+        "media_type": {
+          "enum": [
+            "text/plain",
+            "application/json"
+          ]
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "resource",
+        "kind",
+        "media_type",
+        "content_hash"
+      ],
+      "additionalProperties": false
+    },
+    "operation_receipt": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "principal_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "executor": {
+          "enum": [
+            "tiki",
+            "jobpilot"
+          ]
+        },
+        "payload_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "effect_status": {
+          "enum": [
+            "none",
+            "confirmed",
+            "unknown"
+          ]
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource"
+          },
+          "maxItems": 100
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:[0-5]\\d(?:\\.\\d{1,6})?Z$"
+        }
+      },
+      "required": [
+        "operation_id",
+        "principal_id",
+        "executor",
+        "payload_hash",
+        "effect_status",
+        "resources",
+        "recorded_at"
+      ],
+      "additionalProperties": false
+    },
+    "resource": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "enum": [
+            "platform",
+            "tiki",
+            "jobpilot"
+          ]
+        },
+        "resource_type": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "resource_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "principal_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "service",
+        "resource_type",
+        "resource_id",
+        "principal_id"
+      ],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "revision"
+          ]
+        },
+        {
+          "required": [
+            "content_hash"
+          ]
+        }
+      ]
+    },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "accounting": {
+          "enum": [
+            "reported",
+            "estimated",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "calls",
+        "input_tokens",
+        "output_tokens",
+        "accounting"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

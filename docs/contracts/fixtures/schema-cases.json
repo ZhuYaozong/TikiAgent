@@ -1,0 +1,1694 @@
+[
+  {
+    "id": "task-valid",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "runtime",
+      "owner": "tiki",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "QUEUED",
+      "phase": "planning",
+      "delivery_status": "none",
+      "effect_status": "none",
+      "acceptance_status": "pending",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": true
+  },
+  {
+    "id": "task-unknown-field",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "runtime",
+      "owner": "tiki",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "QUEUED",
+      "phase": "planning",
+      "delivery_status": "none",
+      "effect_status": "none",
+      "acceptance_status": "pending",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z",
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "task-unknown-version",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "runtime",
+      "owner": "tiki",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "QUEUED",
+      "phase": "planning",
+      "delivery_status": "none",
+      "effect_status": "none",
+      "acceptance_status": "pending",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": false
+  },
+  {
+    "id": "identity-valid",
+    "schema": "identity-v1.schema.json",
+    "input": {
+      "principal_id": "user-1",
+      "issuer": "https://identity.example.invalid",
+      "subject": "subject-1",
+      "actor": "platform",
+      "audience": "tiki",
+      "scopes": [
+        "task.submit"
+      ]
+    },
+    "valid": true
+  },
+  {
+    "id": "identity-unknown-field",
+    "schema": "identity-v1.schema.json",
+    "input": {
+      "principal_id": "user-1",
+      "issuer": "https://identity.example.invalid",
+      "subject": "subject-1",
+      "actor": "platform",
+      "audience": "tiki",
+      "scopes": [
+        "task.submit"
+      ],
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "submission-valid",
+    "schema": "task-submission-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "submission_id": "submit-1",
+      "conversation_id": "conv-1",
+      "message": "读取所选简历",
+      "selected_resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "id": "submission-unknown-field",
+    "schema": "task-submission-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "submission_id": "submit-1",
+      "conversation_id": "conv-1",
+      "message": "读取所选简历",
+      "selected_resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "submission-unknown-version",
+    "schema": "task-submission-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "submission_id": "submit-1",
+      "conversation_id": "conv-1",
+      "message": "读取所选简历",
+      "selected_resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "id": "delegation-valid",
+    "schema": "delegation-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "delegation_id": "del-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "run_id": "run-1",
+      "executor": "jobpilot",
+      "skill_id": "job.resume.read.v1",
+      "resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "instruction": "读取所选简历",
+      "budget": {
+        "schema_version": "1.0",
+        "reservation_id": "budget-1",
+        "principal_id": "user-1",
+        "platform_task_id": "pt-1",
+        "deadline": "2026-10-23T08:00:00Z",
+        "max_calls": 10,
+        "max_input_tokens": 10000,
+        "max_output_tokens": 10000,
+        "usage": {
+          "calls": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "accounting": "reported"
+        },
+        "status": "reserved"
+      }
+    },
+    "valid": true
+  },
+  {
+    "id": "delegation-unknown-field",
+    "schema": "delegation-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "delegation_id": "del-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "run_id": "run-1",
+      "executor": "jobpilot",
+      "skill_id": "job.resume.read.v1",
+      "resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "instruction": "读取所选简历",
+      "budget": {
+        "schema_version": "1.0",
+        "reservation_id": "budget-1",
+        "principal_id": "user-1",
+        "platform_task_id": "pt-1",
+        "deadline": "2026-10-23T08:00:00Z",
+        "max_calls": 10,
+        "max_input_tokens": 10000,
+        "max_output_tokens": 10000,
+        "usage": {
+          "calls": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "accounting": "reported"
+        },
+        "status": "reserved"
+      },
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "delegation-unknown-version",
+    "schema": "delegation-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "delegation_id": "del-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "run_id": "run-1",
+      "executor": "jobpilot",
+      "skill_id": "job.resume.read.v1",
+      "resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "instruction": "读取所选简历",
+      "budget": {
+        "schema_version": "1.0",
+        "reservation_id": "budget-1",
+        "principal_id": "user-1",
+        "platform_task_id": "pt-1",
+        "deadline": "2026-10-23T08:00:00Z",
+        "max_calls": 10,
+        "max_input_tokens": 10000,
+        "max_output_tokens": 10000,
+        "usage": {
+          "calls": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "accounting": "reported"
+        },
+        "status": "reserved"
+      }
+    },
+    "valid": false
+  },
+  {
+    "id": "budget-valid",
+    "schema": "budget-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "reservation_id": "budget-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "deadline": "2026-10-23T08:00:00Z",
+      "max_calls": 10,
+      "max_input_tokens": 10000,
+      "max_output_tokens": 10000,
+      "usage": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "accounting": "reported"
+      },
+      "status": "reserved"
+    },
+    "valid": true
+  },
+  {
+    "id": "budget-unknown-field",
+    "schema": "budget-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "reservation_id": "budget-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "deadline": "2026-10-23T08:00:00Z",
+      "max_calls": 10,
+      "max_input_tokens": 10000,
+      "max_output_tokens": 10000,
+      "usage": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "accounting": "reported"
+      },
+      "status": "reserved",
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "budget-unknown-version",
+    "schema": "budget-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "reservation_id": "budget-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "deadline": "2026-10-23T08:00:00Z",
+      "max_calls": 10,
+      "max_input_tokens": 10000,
+      "max_output_tokens": 10000,
+      "usage": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "accounting": "reported"
+      },
+      "status": "reserved"
+    },
+    "valid": false
+  },
+  {
+    "id": "action_proposal-valid",
+    "schema": "action-proposal-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "proposal_id": "prop-1",
+      "proposal_revision": 1,
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "run_id": "run-1",
+      "delegation_id": "del-1",
+      "remote_task_id": "domain-1",
+      "operation_id": "op-1",
+      "executor": "jobpilot",
+      "audience": "jobpilot",
+      "action_type": "resume.create_version",
+      "resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "preview_artifact": {
+        "artifact_id": "art-1",
+        "resource": {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "kind": "resume_preview",
+        "media_type": "text/plain",
+        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "display_summary": "保存预览为新版本",
+      "expires_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": true
+  },
+  {
+    "id": "action_proposal-unknown-field",
+    "schema": "action-proposal-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "proposal_id": "prop-1",
+      "proposal_revision": 1,
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "run_id": "run-1",
+      "delegation_id": "del-1",
+      "remote_task_id": "domain-1",
+      "operation_id": "op-1",
+      "executor": "jobpilot",
+      "audience": "jobpilot",
+      "action_type": "resume.create_version",
+      "resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "preview_artifact": {
+        "artifact_id": "art-1",
+        "resource": {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "kind": "resume_preview",
+        "media_type": "text/plain",
+        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "display_summary": "保存预览为新版本",
+      "expires_at": "2026-10-23T08:00:00Z",
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "action_proposal-unknown-version",
+    "schema": "action-proposal-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "proposal_id": "prop-1",
+      "proposal_revision": 1,
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "run_id": "run-1",
+      "delegation_id": "del-1",
+      "remote_task_id": "domain-1",
+      "operation_id": "op-1",
+      "executor": "jobpilot",
+      "audience": "jobpilot",
+      "action_type": "resume.create_version",
+      "resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "preview_artifact": {
+        "artifact_id": "art-1",
+        "resource": {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "kind": "resume_preview",
+        "media_type": "text/plain",
+        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "display_summary": "保存预览为新版本",
+      "expires_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": false
+  },
+  {
+    "id": "approval_decision-valid",
+    "schema": "approval-decision-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "decision_id": "decision-1",
+      "principal_id": "user-1",
+      "proposal_id": "prop-1",
+      "proposal_revision": 1,
+      "operation_id": "op-1",
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "decision": "approve",
+      "decided_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": true
+  },
+  {
+    "id": "approval_decision-unknown-field",
+    "schema": "approval-decision-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "decision_id": "decision-1",
+      "principal_id": "user-1",
+      "proposal_id": "prop-1",
+      "proposal_revision": 1,
+      "operation_id": "op-1",
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "decision": "approve",
+      "decided_at": "2026-10-23T08:00:00Z",
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "approval_decision-unknown-version",
+    "schema": "approval-decision-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "decision_id": "decision-1",
+      "principal_id": "user-1",
+      "proposal_id": "prop-1",
+      "proposal_revision": 1,
+      "operation_id": "op-1",
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "decision": "approve",
+      "decided_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": false
+  },
+  {
+    "id": "command-valid",
+    "schema": "command-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "command_id": "cmd-1",
+      "idempotency_key": "key-1",
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "identity": {
+        "principal_id": "user-1",
+        "issuer": "https://identity.example.invalid",
+        "subject": "subject-1",
+        "actor": "platform",
+        "audience": "tiki",
+        "scopes": [
+          "task.submit"
+        ]
+      },
+      "kind": "submit_run",
+      "platform_task_id": "pt-1",
+      "target_task_id": "run-1",
+      "sent_at": "2026-10-23T08:00:00Z",
+      "payload": {
+        "schema_version": "1.0",
+        "submission_id": "submit-1",
+        "conversation_id": "conv-1",
+        "message": "读取所选简历",
+        "selected_resources": [
+          {
+            "service": "jobpilot",
+            "resource_type": "resume",
+            "resource_id": "resume-1",
+            "principal_id": "user-1",
+            "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      }
+    },
+    "valid": true
+  },
+  {
+    "id": "command-unknown-field",
+    "schema": "command-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "command_id": "cmd-1",
+      "idempotency_key": "key-1",
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "identity": {
+        "principal_id": "user-1",
+        "issuer": "https://identity.example.invalid",
+        "subject": "subject-1",
+        "actor": "platform",
+        "audience": "tiki",
+        "scopes": [
+          "task.submit"
+        ]
+      },
+      "kind": "submit_run",
+      "platform_task_id": "pt-1",
+      "target_task_id": "run-1",
+      "sent_at": "2026-10-23T08:00:00Z",
+      "payload": {
+        "schema_version": "1.0",
+        "submission_id": "submit-1",
+        "conversation_id": "conv-1",
+        "message": "读取所选简历",
+        "selected_resources": [
+          {
+            "service": "jobpilot",
+            "resource_type": "resume",
+            "resource_id": "resume-1",
+            "principal_id": "user-1",
+            "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      },
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "command-unknown-version",
+    "schema": "command-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "command_id": "cmd-1",
+      "idempotency_key": "key-1",
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "identity": {
+        "principal_id": "user-1",
+        "issuer": "https://identity.example.invalid",
+        "subject": "subject-1",
+        "actor": "platform",
+        "audience": "tiki",
+        "scopes": [
+          "task.submit"
+        ]
+      },
+      "kind": "submit_run",
+      "platform_task_id": "pt-1",
+      "target_task_id": "run-1",
+      "sent_at": "2026-10-23T08:00:00Z",
+      "payload": {
+        "schema_version": "1.0",
+        "submission_id": "submit-1",
+        "conversation_id": "conv-1",
+        "message": "读取所选简历",
+        "selected_resources": [
+          {
+            "service": "jobpilot",
+            "resource_type": "resume",
+            "resource_id": "resume-1",
+            "principal_id": "user-1",
+            "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      }
+    },
+    "valid": false
+  },
+  {
+    "id": "command_receipt-valid",
+    "schema": "command-receipt-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "command_id": "cmd-1",
+      "task_id": "run-1",
+      "outcome": "accepted",
+      "received_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": true
+  },
+  {
+    "id": "command_receipt-unknown-field",
+    "schema": "command-receipt-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "command_id": "cmd-1",
+      "task_id": "run-1",
+      "outcome": "accepted",
+      "received_at": "2026-10-23T08:00:00Z",
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "command_receipt-unknown-version",
+    "schema": "command-receipt-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "command_id": "cmd-1",
+      "task_id": "run-1",
+      "outcome": "accepted",
+      "received_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": false
+  },
+  {
+    "id": "agent_result-valid",
+    "schema": "agent-result-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "result_id": "result-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "run_id": "run-1",
+      "delegation_id": "del-1",
+      "remote_task_id": "domain-1",
+      "domain_type": "jobpilot",
+      "skill_id": "job.resume.read.v1",
+      "delivery_status": "ready",
+      "summary": "已读取简历",
+      "artifacts": [
+        {
+          "artifact_id": "art-1",
+          "resource": {
+            "service": "jobpilot",
+            "resource_type": "resume",
+            "resource_id": "resume-1",
+            "principal_id": "user-1",
+            "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "kind": "resume_text",
+          "media_type": "text/plain",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "limitations": [],
+      "operation_receipts": [],
+      "source_versions": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "usage": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "accounting": "reported"
+      }
+    },
+    "valid": true
+  },
+  {
+    "id": "agent_result-unknown-field",
+    "schema": "agent-result-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "result_id": "result-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "run_id": "run-1",
+      "delegation_id": "del-1",
+      "remote_task_id": "domain-1",
+      "domain_type": "jobpilot",
+      "skill_id": "job.resume.read.v1",
+      "delivery_status": "ready",
+      "summary": "已读取简历",
+      "artifacts": [
+        {
+          "artifact_id": "art-1",
+          "resource": {
+            "service": "jobpilot",
+            "resource_type": "resume",
+            "resource_id": "resume-1",
+            "principal_id": "user-1",
+            "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "kind": "resume_text",
+          "media_type": "text/plain",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "limitations": [],
+      "operation_receipts": [],
+      "source_versions": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "usage": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "accounting": "reported"
+      },
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "agent_result-unknown-version",
+    "schema": "agent-result-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "result_id": "result-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "run_id": "run-1",
+      "delegation_id": "del-1",
+      "remote_task_id": "domain-1",
+      "domain_type": "jobpilot",
+      "skill_id": "job.resume.read.v1",
+      "delivery_status": "ready",
+      "summary": "已读取简历",
+      "artifacts": [
+        {
+          "artifact_id": "art-1",
+          "resource": {
+            "service": "jobpilot",
+            "resource_type": "resume",
+            "resource_id": "resume-1",
+            "principal_id": "user-1",
+            "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "kind": "resume_text",
+          "media_type": "text/plain",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "limitations": [],
+      "operation_receipts": [],
+      "source_versions": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "usage": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "accounting": "reported"
+      }
+    },
+    "valid": false
+  },
+  {
+    "id": "input_request-valid",
+    "schema": "input-request-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "input_request_id": "input-1",
+      "principal_id": "user-1",
+      "task_id": "run-1",
+      "source": "tiki",
+      "expected_revision": 2,
+      "wait_kind": "clarification",
+      "prompt": "请补充岗位名称",
+      "expires_at": "2026-10-23T08:00:00Z",
+      "response_type": "text"
+    },
+    "valid": true
+  },
+  {
+    "id": "input_request-unknown-field",
+    "schema": "input-request-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "input_request_id": "input-1",
+      "principal_id": "user-1",
+      "task_id": "run-1",
+      "source": "tiki",
+      "expected_revision": 2,
+      "wait_kind": "clarification",
+      "prompt": "请补充岗位名称",
+      "expires_at": "2026-10-23T08:00:00Z",
+      "response_type": "text",
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "input_request-unknown-version",
+    "schema": "input-request-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "input_request_id": "input-1",
+      "principal_id": "user-1",
+      "task_id": "run-1",
+      "source": "tiki",
+      "expected_revision": 2,
+      "wait_kind": "clarification",
+      "prompt": "请补充岗位名称",
+      "expires_at": "2026-10-23T08:00:00Z",
+      "response_type": "text"
+    },
+    "valid": false
+  },
+  {
+    "id": "event-valid",
+    "schema": "event-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "event_id": "event-1",
+      "source": "tiki",
+      "source_task_id": "run-1",
+      "source_revision": 1,
+      "seq": 1,
+      "platform_task_id": "pt-1",
+      "principal_id": "user-1",
+      "occurred_at": "2026-10-23T08:00:00Z",
+      "type": "task.accepted",
+      "snapshot": {
+        "schema_version": "1.0",
+        "principal_id": "user-1",
+        "platform_task_id": "pt-1",
+        "task_id": "run-1",
+        "task_kind": "runtime",
+        "owner": "tiki",
+        "run_id": "run-1",
+        "revision": 1,
+        "attempt_no": 1,
+        "state": "QUEUED",
+        "phase": "planning",
+        "delivery_status": "none",
+        "effect_status": "none",
+        "acceptance_status": "pending",
+        "limitations": [],
+        "updated_at": "2026-10-23T08:00:00Z"
+      }
+    },
+    "valid": true
+  },
+  {
+    "id": "event-unknown-field",
+    "schema": "event-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "event_id": "event-1",
+      "source": "tiki",
+      "source_task_id": "run-1",
+      "source_revision": 1,
+      "seq": 1,
+      "platform_task_id": "pt-1",
+      "principal_id": "user-1",
+      "occurred_at": "2026-10-23T08:00:00Z",
+      "type": "task.accepted",
+      "snapshot": {
+        "schema_version": "1.0",
+        "principal_id": "user-1",
+        "platform_task_id": "pt-1",
+        "task_id": "run-1",
+        "task_kind": "runtime",
+        "owner": "tiki",
+        "run_id": "run-1",
+        "revision": 1,
+        "attempt_no": 1,
+        "state": "QUEUED",
+        "phase": "planning",
+        "delivery_status": "none",
+        "effect_status": "none",
+        "acceptance_status": "pending",
+        "limitations": [],
+        "updated_at": "2026-10-23T08:00:00Z"
+      },
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "event-unknown-version",
+    "schema": "event-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "event_id": "event-1",
+      "source": "tiki",
+      "source_task_id": "run-1",
+      "source_revision": 1,
+      "seq": 1,
+      "platform_task_id": "pt-1",
+      "principal_id": "user-1",
+      "occurred_at": "2026-10-23T08:00:00Z",
+      "type": "task.accepted",
+      "snapshot": {
+        "schema_version": "1.0",
+        "principal_id": "user-1",
+        "platform_task_id": "pt-1",
+        "task_id": "run-1",
+        "task_kind": "runtime",
+        "owner": "tiki",
+        "run_id": "run-1",
+        "revision": 1,
+        "attempt_no": 1,
+        "state": "QUEUED",
+        "phase": "planning",
+        "delivery_status": "none",
+        "effect_status": "none",
+        "acceptance_status": "pending",
+        "limitations": [],
+        "updated_at": "2026-10-23T08:00:00Z"
+      }
+    },
+    "valid": false
+  },
+  {
+    "id": "error-valid",
+    "schema": "error-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "code": "FORBIDDEN",
+      "message": "没有访问权限",
+      "retryable": false,
+      "effect_status": "none"
+    },
+    "valid": true
+  },
+  {
+    "id": "error-unknown-field",
+    "schema": "error-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "code": "FORBIDDEN",
+      "message": "没有访问权限",
+      "retryable": false,
+      "effect_status": "none",
+      "unexpected": true
+    },
+    "valid": false
+  },
+  {
+    "id": "error-unknown-version",
+    "schema": "error-v1.schema.json",
+    "input": {
+      "schema_version": "2.0",
+      "code": "FORBIDDEN",
+      "message": "没有访问权限",
+      "retryable": false,
+      "effect_status": "none"
+    },
+    "valid": false
+  },
+  {
+    "id": "platform-accepted",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "task_kind": "platform",
+      "owner": "platform",
+      "task_id": "pt-1",
+      "principal_id": "user-1",
+      "conversation_id": "conv-1",
+      "submission_id": "submit-1",
+      "dispatch_status": "accepted"
+    },
+    "valid": true
+  },
+  {
+    "id": "platform-cannot-own-root",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "runtime",
+      "owner": "platform",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "QUEUED",
+      "phase": "planning",
+      "delivery_status": "none",
+      "effect_status": "none",
+      "acceptance_status": "pending",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": false
+  },
+  {
+    "id": "domain-valid",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "domain-1",
+      "task_kind": "domain",
+      "owner": "jobpilot",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "QUEUED",
+      "phase": "planning",
+      "delivery_status": "none",
+      "effect_status": "none",
+      "acceptance_status": "pending",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z",
+      "delegation_id": "del-1"
+    },
+    "valid": true
+  },
+  {
+    "id": "domain-missing-delegation",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "domain",
+      "owner": "jobpilot",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "QUEUED",
+      "phase": "planning",
+      "delivery_status": "none",
+      "effect_status": "none",
+      "acceptance_status": "pending",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": false
+  },
+  {
+    "id": "waiting-missing-input",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "runtime",
+      "owner": "tiki",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "WAITING_INPUT",
+      "phase": "planning",
+      "delivery_status": "none",
+      "effect_status": "none",
+      "acceptance_status": "pending",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": false
+  },
+  {
+    "id": "waiting-valid",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "runtime",
+      "owner": "tiki",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "WAITING_INPUT",
+      "phase": "planning",
+      "delivery_status": "none",
+      "effect_status": "none",
+      "acceptance_status": "pending",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z",
+      "wait_kind": "clarification",
+      "input_request_id": "input-1"
+    },
+    "valid": true
+  },
+  {
+    "id": "unknown-effect-cancel",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "runtime",
+      "owner": "tiki",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "CANCELED",
+      "phase": "planning",
+      "delivery_status": "none",
+      "effect_status": "unknown",
+      "acceptance_status": "pending",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": false
+  },
+  {
+    "id": "unknown-effect-reconcile",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "runtime",
+      "owner": "tiki",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "RUNNING",
+      "phase": "reconciling",
+      "delivery_status": "none",
+      "effect_status": "unknown",
+      "acceptance_status": "pending",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": true
+  },
+  {
+    "id": "complete-missing-result",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "runtime",
+      "owner": "tiki",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "COMPLETED",
+      "phase": "planning",
+      "delivery_status": "none",
+      "effect_status": "none",
+      "acceptance_status": "pending",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": false
+  },
+  {
+    "id": "complete-valid",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "runtime",
+      "owner": "tiki",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "COMPLETED",
+      "phase": "planning",
+      "delivery_status": "ready",
+      "effect_status": "none",
+      "acceptance_status": "accepted",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z",
+      "result_id": "result-1"
+    },
+    "valid": true
+  },
+  {
+    "id": "partial-without-limitations",
+    "schema": "task-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "task_id": "run-1",
+      "task_kind": "runtime",
+      "owner": "tiki",
+      "run_id": "run-1",
+      "revision": 1,
+      "attempt_no": 1,
+      "state": "COMPLETED",
+      "phase": "planning",
+      "delivery_status": "partial",
+      "effect_status": "none",
+      "acceptance_status": "accepted_partial",
+      "limitations": [],
+      "updated_at": "2026-10-23T08:00:00Z",
+      "result_id": "result-1"
+    },
+    "valid": false
+  },
+  {
+    "id": "browser-principal-injection",
+    "schema": "task-submission-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "submission_id": "submit-1",
+      "conversation_id": "conv-1",
+      "message": "读取所选简历",
+      "selected_resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "principal_id": "user-2"
+    },
+    "valid": false
+  },
+  {
+    "id": "resource-unversioned",
+    "schema": "task-submission-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "submission_id": "submit-1",
+      "conversation_id": "conv-1",
+      "message": "读取所选简历",
+      "selected_resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "id": "resource-revision-only",
+    "schema": "task-submission-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "submission_id": "submit-1",
+      "conversation_id": "conv-1",
+      "message": "读取所选简历",
+      "selected_resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "revision": 1
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "id": "bad-date",
+    "schema": "budget-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "reservation_id": "budget-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "deadline": "2026-02-30T00:00:00Z",
+      "max_calls": 10,
+      "max_input_tokens": 10000,
+      "max_output_tokens": 10000,
+      "usage": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "accounting": "reported"
+      },
+      "status": "reserved"
+    },
+    "valid": false
+  },
+  {
+    "id": "negative-budget",
+    "schema": "budget-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "reservation_id": "budget-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "deadline": "2026-10-23T08:00:00Z",
+      "max_calls": -1,
+      "max_input_tokens": 10000,
+      "max_output_tokens": 10000,
+      "usage": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "accounting": "reported"
+      },
+      "status": "reserved"
+    },
+    "valid": false
+  },
+  {
+    "id": "unsafe-integer",
+    "schema": "budget-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "reservation_id": "budget-1",
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "deadline": "2026-10-23T08:00:00Z",
+      "max_calls": 9007199254740992,
+      "max_input_tokens": 10000,
+      "max_output_tokens": 10000,
+      "usage": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "accounting": "reported"
+      },
+      "status": "reserved"
+    },
+    "valid": false
+  },
+  {
+    "id": "unknown-effect-retry",
+    "schema": "error-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "code": "EFFECT_UNKNOWN",
+      "message": "没有访问权限",
+      "retryable": true,
+      "effect_status": "unknown"
+    },
+    "valid": false
+  },
+  {
+    "id": "unknown-effect-stop",
+    "schema": "error-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "code": "EFFECT_UNKNOWN",
+      "message": "没有访问权限",
+      "retryable": false,
+      "effect_status": "unknown"
+    },
+    "valid": true
+  },
+  {
+    "id": "rejected-approval-is-valid-decision",
+    "schema": "approval-decision-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "decision_id": "decision-1",
+      "principal_id": "user-1",
+      "proposal_id": "prop-1",
+      "proposal_revision": 1,
+      "operation_id": "op-1",
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "decision": "reject",
+      "decided_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": true
+  },
+  {
+    "id": "wrong-executor",
+    "schema": "action-proposal-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "proposal_id": "prop-1",
+      "proposal_revision": 1,
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "run_id": "run-1",
+      "delegation_id": "del-1",
+      "remote_task_id": "domain-1",
+      "operation_id": "op-1",
+      "executor": "platform",
+      "audience": "jobpilot",
+      "action_type": "resume.create_version",
+      "resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "preview_artifact": {
+        "artifact_id": "art-1",
+        "resource": {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "kind": "resume_preview",
+        "media_type": "text/plain",
+        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "display_summary": "保存预览为新版本",
+      "expires_at": "2026-10-23T08:00:00Z"
+    },
+    "valid": false
+  },
+  {
+    "id": "approval-no-secret",
+    "schema": "action-proposal-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "proposal_id": "prop-1",
+      "proposal_revision": 1,
+      "principal_id": "user-1",
+      "platform_task_id": "pt-1",
+      "run_id": "run-1",
+      "delegation_id": "del-1",
+      "remote_task_id": "domain-1",
+      "operation_id": "op-1",
+      "executor": "jobpilot",
+      "audience": "jobpilot",
+      "action_type": "resume.create_version",
+      "resources": [
+        {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "preview_artifact": {
+        "artifact_id": "art-1",
+        "resource": {
+          "service": "jobpilot",
+          "resource_type": "resume",
+          "resource_id": "resume-1",
+          "principal_id": "user-1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "kind": "resume_preview",
+        "media_type": "text/plain",
+        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "display_summary": "保存预览为新版本",
+      "expires_at": "2026-10-23T08:00:00Z",
+      "access_token": "example-not-a-token"
+    },
+    "valid": false
+  },
+  {
+    "id": "wrong-input-response-type",
+    "schema": "input-request-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "input_request_id": "input-1",
+      "principal_id": "user-1",
+      "task_id": "run-1",
+      "source": "tiki",
+      "expected_revision": 2,
+      "wait_kind": "approval",
+      "prompt": "请补充岗位名称",
+      "expires_at": "2026-10-23T08:00:00Z",
+      "response_type": "text"
+    },
+    "valid": false
+  },
+  {
+    "id": "command-cancel-wrong-payload",
+    "schema": "command-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "command_id": "cmd-1",
+      "idempotency_key": "key-1",
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "identity": {
+        "principal_id": "user-1",
+        "issuer": "https://identity.example.invalid",
+        "subject": "subject-1",
+        "actor": "platform",
+        "audience": "tiki",
+        "scopes": [
+          "task.submit"
+        ]
+      },
+      "kind": "cancel",
+      "platform_task_id": "pt-1",
+      "target_task_id": "run-1",
+      "sent_at": "2026-10-23T08:00:00Z",
+      "payload": {
+        "schema_version": "1.0",
+        "submission_id": "submit-1",
+        "conversation_id": "conv-1",
+        "message": "读取所选简历",
+        "selected_resources": [
+          {
+            "service": "jobpilot",
+            "resource_type": "resume",
+            "resource_id": "resume-1",
+            "principal_id": "user-1",
+            "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      }
+    },
+    "valid": false
+  },
+  {
+    "id": "command-cancel-valid",
+    "schema": "command-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "command_id": "cmd-1",
+      "idempotency_key": "key-1",
+      "payload_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "identity": {
+        "principal_id": "user-1",
+        "issuer": "https://identity.example.invalid",
+        "subject": "subject-1",
+        "actor": "platform",
+        "audience": "tiki",
+        "scopes": [
+          "task.submit"
+        ]
+      },
+      "kind": "cancel",
+      "platform_task_id": "pt-1",
+      "target_task_id": "run-1",
+      "sent_at": "2026-10-23T08:00:00Z",
+      "payload": {
+        "reason": "用户取消",
+        "expected_revision": 1
+      }
+    },
+    "valid": true
+  },
+  {
+    "id": "event-terminal-mismatch",
+    "schema": "event-v1.schema.json",
+    "input": {
+      "schema_version": "1.0",
+      "event_id": "event-1",
+      "source": "tiki",
+      "source_task_id": "run-1",
+      "source_revision": 1,
+      "seq": 1,
+      "platform_task_id": "pt-1",
+      "principal_id": "user-1",
+      "occurred_at": "2026-10-23T08:00:00Z",
+      "type": "task.completed",
+      "snapshot": {
+        "schema_version": "1.0",
+        "principal_id": "user-1",
+        "platform_task_id": "pt-1",
+        "task_id": "run-1",
+        "task_kind": "runtime",
+        "owner": "tiki",
+        "run_id": "run-1",
+        "revision": 1,
+        "attempt_no": 1,
+        "state": "QUEUED",
+        "phase": "planning",
+        "delivery_status": "none",
+        "effect_status": "none",
+        "acceptance_status": "pending",
+        "limitations": [],
+        "updated_at": "2026-10-23T08:00:00Z"
+      }
+    },
+    "valid": false
+  }
+]

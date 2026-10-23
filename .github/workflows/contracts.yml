@@ -1,0 +1,35 @@
+name: Cross-language contracts
+on:
+  push:
+    paths: ['docs/contracts/**', 'tools/contract-validation/**', '.github/workflows/contracts.yml']
+  pull_request:
+    paths: ['docs/contracts/**', 'tools/contract-validation/**', '.github/workflows/contracts.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: tools/contract-validation/java/pom.xml
+      - run: python -m pip install -r tools/contract-validation/requirements.txt
+      - name: Python and Java use the same vectors
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/contract-validation/verify_python.py > python.results
+          mvn -B -q -f tools/contract-validation/java/pom.xml compile exec:java -Dexec.args=docs/contracts > java.raw
+          # Maven 可输出诊断；只比较带样例 ID 的记录和最终统计。
+          sed -r 's/\x1B\[[0-9;]*[mK]//g' java.raw | grep -E '^([A-Za-z0-9_-]+=|PASS schemas=)' > java.results
+          diff -u python.results java.results
+          tail -n 1 python.results

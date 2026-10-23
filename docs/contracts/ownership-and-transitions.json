@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "owners": {
+    "platform": "platform",
+    "runtime": "tiki",
+    "domain": "jobpilot"
+  },
+  "transitions": {
+    "QUEUED": [
+      "RUNNING",
+      "REJECTED",
+      "CANCELED"
+    ],
+    "RUNNING": [
+      "WAITING_INPUT",
+      "COMPLETED",
+      "FAILED",
+      "CANCELED"
+    ],
+    "WAITING_INPUT": [
+      "RUNNING",
+      "FAILED",
+      "CANCELED"
+    ],
+    "COMPLETED": [],
+    "FAILED": [],
+    "CANCELED": [],
+    "REJECTED": []
+  }
+}

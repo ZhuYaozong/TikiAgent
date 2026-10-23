@@ -1,0 +1,414 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.tikiagent.invalid/v1/task",
+  "title": "task v1",
+  "$ref": "#/$defs/task",
+  "$defs": {
+    "execution_task": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "principal_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "platform_task_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "task_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "task_kind": {
+          "enum": [
+            "runtime",
+            "domain"
+          ]
+        },
+        "owner": {
+          "enum": [
+            "tiki",
+            "jobpilot"
+          ]
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "delegation_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "retry_of": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "attempt_no": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "WAITING_INPUT",
+            "COMPLETED",
+            "FAILED",
+            "CANCELED",
+            "REJECTED"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "planning",
+            "executing",
+            "waiting_remote",
+            "verifying",
+            "reconciling"
+          ]
+        },
+        "wait_kind": {
+          "enum": [
+            "clarification",
+            "approval",
+            "authentication",
+            "reconciliation"
+          ]
+        },
+        "input_request_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "cancel_requested_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:[0-5]\\d(?:\\.\\d{1,6})?Z$"
+        },
+        "delivery_status": {
+          "enum": [
+            "none",
+            "partial",
+            "ready"
+          ]
+        },
+        "effect_status": {
+          "enum": [
+            "none",
+            "confirmed",
+            "unknown"
+          ]
+        },
+        "acceptance_status": {
+          "enum": [
+            "pending",
+            "accepted",
+            "accepted_partial",
+            "rejected"
+          ]
+        },
+        "result_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxItems": 100
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:[0-5]\\d(?:\\.\\d{1,6})?Z$"
+        }
+      },
+      "required": [
+        "schema_version",
+        "principal_id",
+        "platform_task_id",
+        "task_id",
+        "task_kind",
+        "owner",
+        "run_id",
+        "revision",
+        "attempt_no",
+        "state",
+        "phase",
+        "delivery_status",
+        "effect_status",
+        "acceptance_status",
+        "limitations",
+        "updated_at"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "task_kind": {
+                "const": "runtime"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "owner": {
+                "const": "tiki"
+              }
+            },
+            "not": {
+              "required": [
+                "delegation_id"
+              ]
+            }
+          },
+          "else": {
+            "properties": {
+              "owner": {
+                "const": "jobpilot"
+              }
+            },
+            "required": [
+              "delegation_id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "WAITING_INPUT"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "wait_kind",
+              "input_request_id"
+            ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "wait_kind"
+                  ]
+                },
+                {
+                  "required": [
+                    "input_request_id"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "effect_status": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "RUNNING",
+                  "WAITING_INPUT"
+                ]
+              },
+              "phase": {
+                "const": "reconciling"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "WAITING_INPUT"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "wait_kind": {
+                      "const": "reconciliation"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "COMPLETED"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "result_id"
+            ],
+            "properties": {
+              "delivery_status": {
+                "enum": [
+                  "ready",
+                  "partial"
+                ]
+              },
+              "acceptance_status": {
+                "enum": [
+                  "accepted",
+                  "accepted_partial"
+                ]
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "delivery_status": {
+                      "const": "partial"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "acceptance_status": {
+                      "const": "accepted_partial"
+                    },
+                    "limitations": {
+                      "minItems": 1
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "acceptance_status": {
+                      "const": "accepted"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "platform_task": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "task_kind": {
+          "const": "platform"
+        },
+        "owner": {
+          "const": "platform"
+        },
+        "task_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "principal_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "conversation_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "submission_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "dispatch_status": {
+          "enum": [
+            "accepted",
+            "dispatching",
+            "dispatched",
+            "rejected"
+          ]
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "retry_of": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "projection": {
+          "$ref": "#/$defs/execution_task"
+        }
+      },
+      "required": [
+        "schema_version",
+        "task_kind",
+        "owner",
+        "task_id",
+        "principal_id",
+        "conversation_id",
+        "submission_id",
+        "dispatch_status"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "projection"
+            ]
+          },
+          "then": {
+            "required": [
+              "run_id"
+            ],
+            "properties": {
+              "projection": {
+                "properties": {
+                  "task_kind": {
+                    "const": "runtime"
+                  },
+                  "owner": {
+                    "const": "tiki"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "task": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/platform_task"
+        },
+        {
+          "$ref": "#/$defs/execution_task"
+        }
+      ]
+    }
+  }
+}

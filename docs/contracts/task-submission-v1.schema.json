@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.tikiagent.invalid/v1/task-submission",
+  "title": "task-submission v1",
+  "$ref": "#/$defs/submission",
+  "$defs": {
+    "resource": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "enum": [
+            "platform",
+            "tiki",
+            "jobpilot"
+          ]
+        },
+        "resource_type": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "resource_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "principal_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "service",
+        "resource_type",
+        "resource_id",
+        "principal_id"
+      ],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "revision"
+          ]
+        },
+        {
+          "required": [
+            "content_hash"
+          ]
+        }
+      ]
+    },
+    "submission": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "submission_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "conversation_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "selected_resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource"
+          },
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "schema_version",
+        "submission_id",
+        "conversation_id",
+        "message",
+        "selected_resources"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

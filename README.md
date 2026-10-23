@@ -19,6 +19,10 @@ TikiAgent 使用 Supervisor 动态规划和委派任务，由 ResearchAgent 与 
 
 > 当前稳定版本：**v1.0.0**。项目不把 Demo Validation 描述为统计 Evaluation，也不声明未经实验支持的 Multi-Agent 性能优势。
 
+## 平台扩展契约
+
+TiKiAgent 与 JobPilot 的跨服务协议基线见 [B02 契约与验证](docs/contracts/README.md)。该目录提供任务所有权、身份、命令、结果、事件、审批和预算的静态定义及 Python/Java 共用样例；现有运行时尚未接入这些协议。
+
 ## Features
 
 | 能力 | 说明 |
