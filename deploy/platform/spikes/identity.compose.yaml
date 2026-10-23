@@ -1,0 +1,13 @@
+name: tiki-b03-identity
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b
+    command: [start-dev, --https-certificate-file=/certs/tls.crt, --https-certificate-key-file=/certs/tls.key, --http-enabled=false, --hostname=https://localhost:38443]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: spike-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: disposable-b03-admin
+    ports: ['127.0.0.1:38443:8443']
+    volumes:
+      - ../../../integration_tests/platform/identity_spike/.runtime/certs:/certs:ro
+    tmpfs:
+      - /opt/keycloak/data:uid=1000,gid=0,mode=0770
