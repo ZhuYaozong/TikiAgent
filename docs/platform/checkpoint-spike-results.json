@@ -1,0 +1,320 @@
+{
+  "tiki": {
+    "python": "3.13.12",
+    "postgres": "16.13 (Debian 16.13-1.pgdg13+1)",
+    "versions": {
+      "langgraph": "1.2.11",
+      "langgraph-checkpoint": "4.2.0",
+      "langgraph-checkpoint-postgres": "3.1.2",
+      "psycopg": "3.3.6",
+      "langchain-core": "1.6.0",
+      "langgraph-prebuilt": "1.1.0",
+      "langgraph-sdk": "0.4.3"
+    },
+    "cases": [
+      {
+        "case": "reject_non_test_database_before_connect",
+        "passed": true
+      },
+      {
+        "case": "interrupt_first_process",
+        "passed": true
+      },
+      {
+        "case": "interrupt_checkpoint_persisted",
+        "passed": true
+      },
+      {
+        "case": "interrupt_new_process_resume",
+        "passed": true
+      },
+      {
+        "case": "interrupt_node_replay_behavior",
+        "passed": true
+      },
+      {
+        "case": "interrupt_old_epoch_read_rejected",
+        "passed": true
+      },
+      {
+        "case": "parallel_first_process",
+        "passed": true
+      },
+      {
+        "case": "parallel_checkpoint_persisted",
+        "passed": true
+      },
+      {
+        "case": "successful_sibling_pending_writes",
+        "passed": true
+      },
+      {
+        "case": "parallel_new_process_resume",
+        "passed": true
+      },
+      {
+        "case": "parallel_node_replay_behavior",
+        "passed": true
+      },
+      {
+        "case": "parallel_old_epoch_read_rejected",
+        "passed": true
+      },
+      {
+        "case": "explicit_checkpoint_read",
+        "passed": true
+      },
+      {
+        "case": "two_processes_only_one_claim",
+        "passed": true
+      },
+      {
+        "case": "late_old_checkpoint_rejected",
+        "passed": true
+      },
+      {
+        "case": "late_pending_writes_rejected",
+        "passed": true
+      },
+      {
+        "case": "late_writer_did_not_advance_head",
+        "passed": true
+      },
+      {
+        "case": "history_only_valid_checkpoint",
+        "passed": true
+      },
+      {
+        "case": "wrong_owner_same_epoch_rejected",
+        "passed": true
+      },
+      {
+        "case": "same_local_id_other_user_empty",
+        "passed": true
+      },
+      {
+        "case": "cross_user_explicit_id_rejected",
+        "passed": true
+      },
+      {
+        "case": "unscoped_history_rejected",
+        "passed": true
+      },
+      {
+        "case": "takeover_waits_for_locked_transaction",
+        "passed": true
+      },
+      {
+        "case": "expiry_between_check_and_write_rolls_back",
+        "passed": true
+      },
+      {
+        "case": "takeover_after_rollback",
+        "passed": true
+      },
+      {
+        "case": "rolled_back_checkpoint_and_blobs_absent",
+        "passed": true
+      },
+      {
+        "case": "crash_process_kill_rollback",
+        "passed": true
+      },
+      {
+        "case": "crash_no_uncommitted_blob",
+        "passed": true
+      },
+      {
+        "case": "crash_writes_process_kill_rollback",
+        "passed": true
+      },
+      {
+        "case": "crash_writes_no_uncommitted_blob",
+        "passed": true
+      },
+      {
+        "case": "expired_without_takeover_checkpoint_rejected",
+        "passed": true
+      },
+      {
+        "case": "expired_without_takeover_writes_rejected",
+        "passed": true
+      },
+      {
+        "case": "raw_saver_accepts_expired_worker_control",
+        "passed": true
+      },
+      {
+        "case": "legacy_snapshot_isolated",
+        "passed": true
+      },
+      {
+        "case": "new_snapshot_routed",
+        "passed": true
+      },
+      {
+        "case": "unknown_snapshot_rejected",
+        "passed": true
+      }
+    ]
+  },
+  "jobpilot": {
+    "python": "3.12.7",
+    "postgres": "16.13 (Debian 16.13-1.pgdg13+1)",
+    "versions": {
+      "langgraph": "1.2.1",
+      "langgraph-checkpoint": "4.1.1",
+      "langgraph-checkpoint-postgres": "3.1.2",
+      "psycopg": "3.3.6",
+      "langchain-core": "1.4.0",
+      "langgraph-prebuilt": "1.1.0",
+      "langgraph-sdk": "0.3.15"
+    },
+    "cases": [
+      {
+        "case": "reject_non_test_database_before_connect",
+        "passed": true
+      },
+      {
+        "case": "interrupt_first_process",
+        "passed": true
+      },
+      {
+        "case": "interrupt_checkpoint_persisted",
+        "passed": true
+      },
+      {
+        "case": "interrupt_new_process_resume",
+        "passed": true
+      },
+      {
+        "case": "interrupt_node_replay_behavior",
+        "passed": true
+      },
+      {
+        "case": "interrupt_old_epoch_read_rejected",
+        "passed": true
+      },
+      {
+        "case": "parallel_first_process",
+        "passed": true
+      },
+      {
+        "case": "parallel_checkpoint_persisted",
+        "passed": true
+      },
+      {
+        "case": "successful_sibling_pending_writes",
+        "passed": true
+      },
+      {
+        "case": "parallel_new_process_resume",
+        "passed": true
+      },
+      {
+        "case": "parallel_node_replay_behavior",
+        "passed": true
+      },
+      {
+        "case": "parallel_old_epoch_read_rejected",
+        "passed": true
+      },
+      {
+        "case": "explicit_checkpoint_read",
+        "passed": true
+      },
+      {
+        "case": "two_processes_only_one_claim",
+        "passed": true
+      },
+      {
+        "case": "late_old_checkpoint_rejected",
+        "passed": true
+      },
+      {
+        "case": "late_pending_writes_rejected",
+        "passed": true
+      },
+      {
+        "case": "late_writer_did_not_advance_head",
+        "passed": true
+      },
+      {
+        "case": "history_only_valid_checkpoint",
+        "passed": true
+      },
+      {
+        "case": "wrong_owner_same_epoch_rejected",
+        "passed": true
+      },
+      {
+        "case": "same_local_id_other_user_empty",
+        "passed": true
+      },
+      {
+        "case": "cross_user_explicit_id_rejected",
+        "passed": true
+      },
+      {
+        "case": "unscoped_history_rejected",
+        "passed": true
+      },
+      {
+        "case": "takeover_waits_for_locked_transaction",
+        "passed": true
+      },
+      {
+        "case": "expiry_between_check_and_write_rolls_back",
+        "passed": true
+      },
+      {
+        "case": "takeover_after_rollback",
+        "passed": true
+      },
+      {
+        "case": "rolled_back_checkpoint_and_blobs_absent",
+        "passed": true
+      },
+      {
+        "case": "crash_process_kill_rollback",
+        "passed": true
+      },
+      {
+        "case": "crash_no_uncommitted_blob",
+        "passed": true
+      },
+      {
+        "case": "crash_writes_process_kill_rollback",
+        "passed": true
+      },
+      {
+        "case": "crash_writes_no_uncommitted_blob",
+        "passed": true
+      },
+      {
+        "case": "expired_without_takeover_checkpoint_rejected",
+        "passed": true
+      },
+      {
+        "case": "expired_without_takeover_writes_rejected",
+        "passed": true
+      },
+      {
+        "case": "raw_saver_accepts_expired_worker_control",
+        "passed": true
+      },
+      {
+        "case": "legacy_snapshot_isolated",
+        "passed": true
+      },
+      {
+        "case": "new_snapshot_routed",
+        "passed": true
+      },
+      {
+        "case": "unknown_snapshot_rejected",
+        "passed": true
+      }
+    ]
+  }
+}
