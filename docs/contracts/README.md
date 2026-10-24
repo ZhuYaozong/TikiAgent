@@ -44,3 +44,5 @@ Maven 首次构建需要下载固定版本校验库与构建插件，后续可�
 本目录为单一来源；JobPilot 后续锁定 TiKi Git commit/tag 消费。共享协议与向量，不共享 ORM 或业务类。先更新版本协商和消费者，再发送新版本。任何字段修改都必须更新正反例，并重新运行两种语言验证。
 
 本刀记录见 [B02 验收记录](../platform/B02-contracts.md)。A2A binding、OIDC 产品、生产 endpoint 和技能正文将在各自依赖任务中验证；不把本目录作为这些能力已经运行的证据。
+
+B05 已提供 [A2A binding v1](a2a-binding-v1.md) 与 [映射样例](fixtures/a2a-cases.json)。这是独立验证的应用绑定，生产服务接入仍待 J04/J07/T05；B02 schema 不变。

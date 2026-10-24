@@ -1,0 +1,244 @@
+[
+  {
+    "id": "new-domain-task",
+    "request": {
+      "message": {
+        "messageId": "66235861232b4ad6ab8de551ab3b5aca",
+        "role": "ROLE_USER",
+        "parts": [
+          {
+            "text": "B02 command envelope"
+          }
+        ]
+      },
+      "metadata": {
+        "https://contracts.tikiagent.invalid/a2a/binding/v1": {
+          "version": "1.0",
+          "command": {
+            "command_id": "cmd-dd6a87ef5801408d841d1874276757db",
+            "payload": {
+              "run_id": "run-dd6a87ef5801408d841d1874276757db",
+              "schema_version": "1.0",
+              "skill_id": "job.resume.read.v1",
+              "instruction": "complete",
+              "delegation_id": "del-dd6a87ef5801408d841d1874276757db",
+              "platform_task_id": "pt-dd6a87ef5801408d841d1874276757db",
+              "resources": [
+                {
+                  "resource_id": "resume-1",
+                  "service": "jobpilot",
+                  "principal_id": "alice",
+                  "resource_type": "resume",
+                  "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                }
+              ],
+              "executor": "jobpilot",
+              "principal_id": "alice",
+              "budget": {
+                "usage": {
+                  "output_tokens": 0.0,
+                  "input_tokens": 0.0,
+                  "calls": 0.0,
+                  "accounting": "reported"
+                },
+                "schema_version": "1.0",
+                "platform_task_id": "pt-dd6a87ef5801408d841d1874276757db",
+                "status": "reserved",
+                "principal_id": "alice",
+                "max_input_tokens": 10000.0,
+                "max_calls": 10.0,
+                "reservation_id": "budget-1",
+                "deadline": "2099-01-01T00:00:00Z",
+                "max_output_tokens": 10000.0
+              }
+            },
+            "schema_version": "1.0",
+            "sent_at": "2026-10-24T00:00:00Z",
+            "platform_task_id": "pt-dd6a87ef5801408d841d1874276757db",
+            "target_task_id": "domain-dd6a87ef5801408d841d1874276757db",
+            "identity": {
+              "issuer": "https://b05.invalid",
+              "actor": "tiki",
+              "principal_id": "alice",
+              "audience": "jobpilot",
+              "scopes": [
+                "resume.read"
+              ],
+              "subject": "alice"
+            },
+            "idempotency_key": "dd6a87ef5801408d841d1874276757db",
+            "kind": "delegate",
+            "payload_hash": "sha256:f8e3bff7593865d6bb68a95bc02493833e148e5e80ffdc9a5274c3738cb90125"
+          }
+        }
+      }
+    },
+    "expected": "new server-assigned A2A task ID; metadata domain_task_id equals command.target_task_id"
+  },
+  {
+    "id": "same-command-retry",
+    "request": {
+      "message": {
+        "messageId": "fbbf1bbd9751440d80dd8a95be902e6c",
+        "role": "ROLE_USER",
+        "parts": [
+          {
+            "text": "B02 command envelope"
+          }
+        ]
+      },
+      "metadata": {
+        "https://contracts.tikiagent.invalid/a2a/binding/v1": {
+          "version": "1.0",
+          "command": {
+            "command_id": "cmd-dd6a87ef5801408d841d1874276757db",
+            "payload": {
+              "run_id": "run-dd6a87ef5801408d841d1874276757db",
+              "schema_version": "1.0",
+              "skill_id": "job.resume.read.v1",
+              "instruction": "complete",
+              "delegation_id": "del-dd6a87ef5801408d841d1874276757db",
+              "platform_task_id": "pt-dd6a87ef5801408d841d1874276757db",
+              "resources": [
+                {
+                  "resource_id": "resume-1",
+                  "service": "jobpilot",
+                  "principal_id": "alice",
+                  "resource_type": "resume",
+                  "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                }
+              ],
+              "executor": "jobpilot",
+              "principal_id": "alice",
+              "budget": {
+                "usage": {
+                  "output_tokens": 0.0,
+                  "input_tokens": 0.0,
+                  "calls": 0.0,
+                  "accounting": "reported"
+                },
+                "schema_version": "1.0",
+                "platform_task_id": "pt-dd6a87ef5801408d841d1874276757db",
+                "status": "reserved",
+                "principal_id": "alice",
+                "max_input_tokens": 10000.0,
+                "max_calls": 10.0,
+                "reservation_id": "budget-1",
+                "deadline": "2099-01-01T00:00:00Z",
+                "max_output_tokens": 10000.0
+              }
+            },
+            "schema_version": "1.0",
+            "sent_at": "2026-10-24T00:00:00Z",
+            "platform_task_id": "pt-dd6a87ef5801408d841d1874276757db",
+            "target_task_id": "domain-dd6a87ef5801408d841d1874276757db",
+            "identity": {
+              "issuer": "https://b05.invalid",
+              "actor": "tiki",
+              "principal_id": "alice",
+              "audience": "jobpilot",
+              "scopes": [
+                "resume.read"
+              ],
+              "subject": "alice"
+            },
+            "idempotency_key": "dd6a87ef5801408d841d1874276757db",
+            "kind": "delegate",
+            "payload_hash": "sha256:f8e3bff7593865d6bb68a95bc02493833e148e5e80ffdc9a5274c3738cb90125"
+          }
+        }
+      }
+    },
+    "expected": "same A2A task ID as previous request"
+  },
+  {
+    "id": "client-assigned-new-task",
+    "request": {
+      "message": {
+        "messageId": "3fbc2dfce095447aad088692dedf9a37",
+        "taskId": "invented",
+        "role": "ROLE_USER",
+        "parts": [
+          {
+            "text": "B02 command envelope"
+          }
+        ]
+      },
+      "metadata": {
+        "https://contracts.tikiagent.invalid/a2a/binding/v1": {
+          "version": "1.0",
+          "command": {
+            "command_id": "cmd-dd6a87ef5801408d841d1874276757db",
+            "payload": {
+              "run_id": "run-dd6a87ef5801408d841d1874276757db",
+              "schema_version": "1.0",
+              "skill_id": "job.resume.read.v1",
+              "instruction": "complete",
+              "delegation_id": "del-dd6a87ef5801408d841d1874276757db",
+              "platform_task_id": "pt-dd6a87ef5801408d841d1874276757db",
+              "resources": [
+                {
+                  "resource_id": "resume-1",
+                  "service": "jobpilot",
+                  "principal_id": "alice",
+                  "resource_type": "resume",
+                  "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                }
+              ],
+              "executor": "jobpilot",
+              "principal_id": "alice",
+              "budget": {
+                "usage": {
+                  "output_tokens": 0.0,
+                  "input_tokens": 0.0,
+                  "calls": 0.0,
+                  "accounting": "reported"
+                },
+                "schema_version": "1.0",
+                "platform_task_id": "pt-dd6a87ef5801408d841d1874276757db",
+                "status": "reserved",
+                "principal_id": "alice",
+                "max_input_tokens": 10000.0,
+                "max_calls": 10.0,
+                "reservation_id": "budget-1",
+                "deadline": "2099-01-01T00:00:00Z",
+                "max_output_tokens": 10000.0
+              }
+            },
+            "schema_version": "1.0",
+            "sent_at": "2026-10-24T00:00:00Z",
+            "platform_task_id": "pt-dd6a87ef5801408d841d1874276757db",
+            "target_task_id": "domain-dd6a87ef5801408d841d1874276757db",
+            "identity": {
+              "issuer": "https://b05.invalid",
+              "actor": "tiki",
+              "principal_id": "alice",
+              "audience": "jobpilot",
+              "scopes": [
+                "resume.read"
+              ],
+              "subject": "alice"
+            },
+            "idempotency_key": "dd6a87ef5801408d841d1874276757db",
+            "kind": "delegate",
+            "payload_hash": "sha256:f8e3bff7593865d6bb68a95bc02493833e148e5e80ffdc9a5274c3738cb90125"
+          }
+        }
+      }
+    },
+    "expected": "InvalidParamsError: NEW_TASK_ID_MUST_BE_EMPTY"
+  },
+  {
+    "id": "alice-owned-task",
+    "method": "GetTask",
+    "principal": "bob",
+    "expected": "TaskNotFoundError"
+  },
+  {
+    "id": "missing-cancel-command",
+    "method": "CancelTask",
+    "principal": "alice",
+    "task_id": "alice-owned-active-task",
+    "expected": "InvalidParamsError: MISSING_CANCEL_COMMAND"
+  }
+]

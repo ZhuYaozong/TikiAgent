@@ -27,6 +27,8 @@ B03 身份兼容性验证见 [实测报告](docs/platform/identity-spike.md) 和
 
 B04 检查点与租约隔离验证见 [实测报告](docs/platform/checkpoint-spike.md) 和 [独立复现工程](integration_tests/platform/checkpoint_spike/README.md)，两套依赖组合各通过 36 项场景；生产持久化接入仍属于 T04/J05。
 
+B05 A2A 互操作验证见 [实测报告](docs/platform/a2a-spike.md) 与 [协议绑定](docs/contracts/a2a-binding-v1.md)，Python 3.13/3.12 双向各 56 项通过；生产远程任务接入仍属于 J04/J07/T05。
+
 ## Features
 
 | 能力 | 说明 |
