@@ -1,0 +1,50 @@
+name: A2A compatibility spike
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'integration_tests/platform/a2a_spike/**'
+      - 'docs/contracts/**'
+      - '.github/workflows/a2a-spike.yml'
+permissions:
+  contents: read
+jobs:
+  a2a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - client: '3.13'
+            server: '3.12'
+          - client: '3.12'
+            server: '3.13'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        id: server
+        with:
+          python-version: ${{ matrix.server }}
+      - uses: actions/setup-python@v5
+        id: client
+        with:
+          python-version: ${{ matrix.client }}
+      - name: Install isolated interpreters
+        env:
+          SERVER_PYTHON: ${{ steps.server.outputs.python-path }}
+          CLIENT_PYTHON: ${{ steps.client.outputs.python-path }}
+        run: |
+          "$SERVER_PYTHON" -m venv /tmp/b05-server
+          "$CLIENT_PYTHON" -m venv /tmp/b05-client
+          /tmp/b05-server/bin/python -m pip install --require-hashes -r integration_tests/platform/a2a_spike/requirements.lock
+          /tmp/b05-client/bin/python -m pip install --require-hashes -r integration_tests/platform/a2a_spike/requirements.lock
+      - name: Real HTTP interoperability
+        env:
+          B05_SERVER_PYTHON: /tmp/b05-server/bin/python
+        run: /tmp/b05-client/bin/python -u integration_tests/platform/a2a_spike/run.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a2a-${{ matrix.client }}-${{ matrix.server }}
+          path: integration_tests/platform/a2a_spike/.runtime/results.json
+          if-no-files-found: error

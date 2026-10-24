@@ -1,0 +1,472 @@
+{
+  "313-312": {
+    "client_python": "3.13.12",
+    "server": {
+      "probe": "b05",
+      "python": "3.12.10",
+      "sdk": "1.2.3"
+    },
+    "sdk": "1.2.3",
+    "cases": [
+      {
+        "case": "official_sdk_card_and_binding",
+        "passed": true
+      },
+      {
+        "case": "submit_returns_task_and_distinct_ids",
+        "passed": true
+      },
+      {
+        "case": "structured_artifact_returned",
+        "passed": true
+      },
+      {
+        "case": "artifact_matches_b02_schema",
+        "passed": true
+      },
+      {
+        "case": "artifact_identity_and_ids_match",
+        "passed": true
+      },
+      {
+        "case": "get_task",
+        "passed": true
+      },
+      {
+        "case": "duplicate_returns_original_task",
+        "passed": true
+      },
+      {
+        "case": "command_id_cannot_bypass_dedup",
+        "passed": true
+      },
+      {
+        "case": "same_key_different_hash_conflict",
+        "passed": true
+      },
+      {
+        "case": "same_domain_id_different_key_rejected",
+        "passed": true
+      },
+      {
+        "case": "new_logical_request_gets_new_task",
+        "passed": true
+      },
+      {
+        "case": "concurrent_duplicates_one_task",
+        "passed": true
+      },
+      {
+        "case": "discard_response_http_accepted",
+        "passed": true
+      },
+      {
+        "case": "discarded_response_retry_stable",
+        "passed": true
+      },
+      {
+        "case": "input_wait_state",
+        "passed": true
+      },
+      {
+        "case": "input_wrong_input_id",
+        "passed": true
+      },
+      {
+        "case": "input_continues_same_task",
+        "passed": true
+      },
+      {
+        "case": "input_duplicate_response",
+        "passed": true
+      },
+      {
+        "case": "input_terminal_cannot_reopen",
+        "passed": true
+      },
+      {
+        "case": "auth_wait_state",
+        "passed": true
+      },
+      {
+        "case": "auth_wrong_input_id",
+        "passed": true
+      },
+      {
+        "case": "auth_continues_same_task",
+        "passed": true
+      },
+      {
+        "case": "auth_duplicate_response",
+        "passed": true
+      },
+      {
+        "case": "auth_terminal_cannot_reopen",
+        "passed": true
+      },
+      {
+        "case": "cross_user_get",
+        "passed": true
+      },
+      {
+        "case": "cross_user_cancel",
+        "passed": true
+      },
+      {
+        "case": "cross_user_subscribe",
+        "passed": true
+      },
+      {
+        "case": "cross_user_respond",
+        "passed": true
+      },
+      {
+        "case": "cancel_missing_command_rejected",
+        "passed": true
+      },
+      {
+        "case": "cancel_stale_revision_rejected",
+        "passed": true
+      },
+      {
+        "case": "cancel_waiting_task",
+        "passed": true
+      },
+      {
+        "case": "repeat_cancel_stable",
+        "passed": true
+      },
+      {
+        "case": "cancel_same_key_conflict",
+        "passed": true
+      },
+      {
+        "case": "completed_not_cancelable",
+        "passed": true
+      },
+      {
+        "case": "unsupported_cancel",
+        "passed": true
+      },
+      {
+        "case": "stream_has_task_artifact_terminal",
+        "passed": true
+      },
+      {
+        "case": "stream_disconnect_does_not_cancel",
+        "passed": true
+      },
+      {
+        "case": "terminal_subscription_rejected",
+        "passed": true
+      },
+      {
+        "case": "active_subscription_completes",
+        "passed": true
+      },
+      {
+        "case": "late_completion_cannot_override_cancel",
+        "passed": true
+      },
+      {
+        "case": "message_identity_cannot_override_token",
+        "passed": true
+      },
+      {
+        "case": "cross_owner_resource_rejected",
+        "passed": true
+      },
+      {
+        "case": "unapproved_skill_rejected",
+        "passed": true
+      },
+      {
+        "case": "false_hash_rejected",
+        "passed": true
+      },
+      {
+        "case": "unknown_binding_version",
+        "passed": true
+      },
+      {
+        "case": "client_chosen_new_a2a_task_id_rejected",
+        "passed": true
+      },
+      {
+        "case": "untrusted_context_rejected",
+        "passed": true
+      },
+      {
+        "case": "missing_required_extension",
+        "passed": true
+      },
+      {
+        "case": "missing_token",
+        "passed": true
+      },
+      {
+        "case": "invalid_token",
+        "passed": true
+      },
+      {
+        "case": "jcs_key_order_stable",
+        "passed": true
+      },
+      {
+        "case": "jcs_number_canonicalization",
+        "passed": true
+      },
+      {
+        "case": "wrong_audience",
+        "passed": true
+      },
+      {
+        "case": "wrong_actor",
+        "passed": true
+      },
+      {
+        "case": "unknown_skill_rejected",
+        "passed": true
+      },
+      {
+        "case": "bob_legitimate_task_is_distinct",
+        "passed": true
+      }
+    ]
+  },
+  "312-313": {
+    "client_python": "3.12.10",
+    "server": {
+      "probe": "b05",
+      "python": "3.13.12",
+      "sdk": "1.2.3"
+    },
+    "sdk": "1.2.3",
+    "cases": [
+      {
+        "case": "official_sdk_card_and_binding",
+        "passed": true
+      },
+      {
+        "case": "submit_returns_task_and_distinct_ids",
+        "passed": true
+      },
+      {
+        "case": "structured_artifact_returned",
+        "passed": true
+      },
+      {
+        "case": "artifact_matches_b02_schema",
+        "passed": true
+      },
+      {
+        "case": "artifact_identity_and_ids_match",
+        "passed": true
+      },
+      {
+        "case": "get_task",
+        "passed": true
+      },
+      {
+        "case": "duplicate_returns_original_task",
+        "passed": true
+      },
+      {
+        "case": "command_id_cannot_bypass_dedup",
+        "passed": true
+      },
+      {
+        "case": "same_key_different_hash_conflict",
+        "passed": true
+      },
+      {
+        "case": "same_domain_id_different_key_rejected",
+        "passed": true
+      },
+      {
+        "case": "new_logical_request_gets_new_task",
+        "passed": true
+      },
+      {
+        "case": "concurrent_duplicates_one_task",
+        "passed": true
+      },
+      {
+        "case": "discard_response_http_accepted",
+        "passed": true
+      },
+      {
+        "case": "discarded_response_retry_stable",
+        "passed": true
+      },
+      {
+        "case": "input_wait_state",
+        "passed": true
+      },
+      {
+        "case": "input_wrong_input_id",
+        "passed": true
+      },
+      {
+        "case": "input_continues_same_task",
+        "passed": true
+      },
+      {
+        "case": "input_duplicate_response",
+        "passed": true
+      },
+      {
+        "case": "input_terminal_cannot_reopen",
+        "passed": true
+      },
+      {
+        "case": "auth_wait_state",
+        "passed": true
+      },
+      {
+        "case": "auth_wrong_input_id",
+        "passed": true
+      },
+      {
+        "case": "auth_continues_same_task",
+        "passed": true
+      },
+      {
+        "case": "auth_duplicate_response",
+        "passed": true
+      },
+      {
+        "case": "auth_terminal_cannot_reopen",
+        "passed": true
+      },
+      {
+        "case": "cross_user_get",
+        "passed": true
+      },
+      {
+        "case": "cross_user_cancel",
+        "passed": true
+      },
+      {
+        "case": "cross_user_subscribe",
+        "passed": true
+      },
+      {
+        "case": "cross_user_respond",
+        "passed": true
+      },
+      {
+        "case": "cancel_missing_command_rejected",
+        "passed": true
+      },
+      {
+        "case": "cancel_stale_revision_rejected",
+        "passed": true
+      },
+      {
+        "case": "cancel_waiting_task",
+        "passed": true
+      },
+      {
+        "case": "repeat_cancel_stable",
+        "passed": true
+      },
+      {
+        "case": "cancel_same_key_conflict",
+        "passed": true
+      },
+      {
+        "case": "completed_not_cancelable",
+        "passed": true
+      },
+      {
+        "case": "unsupported_cancel",
+        "passed": true
+      },
+      {
+        "case": "stream_has_task_artifact_terminal",
+        "passed": true
+      },
+      {
+        "case": "stream_disconnect_does_not_cancel",
+        "passed": true
+      },
+      {
+        "case": "terminal_subscription_rejected",
+        "passed": true
+      },
+      {
+        "case": "active_subscription_completes",
+        "passed": true
+      },
+      {
+        "case": "late_completion_cannot_override_cancel",
+        "passed": true
+      },
+      {
+        "case": "message_identity_cannot_override_token",
+        "passed": true
+      },
+      {
+        "case": "cross_owner_resource_rejected",
+        "passed": true
+      },
+      {
+        "case": "unapproved_skill_rejected",
+        "passed": true
+      },
+      {
+        "case": "false_hash_rejected",
+        "passed": true
+      },
+      {
+        "case": "unknown_binding_version",
+        "passed": true
+      },
+      {
+        "case": "client_chosen_new_a2a_task_id_rejected",
+        "passed": true
+      },
+      {
+        "case": "untrusted_context_rejected",
+        "passed": true
+      },
+      {
+        "case": "missing_required_extension",
+        "passed": true
+      },
+      {
+        "case": "missing_token",
+        "passed": true
+      },
+      {
+        "case": "invalid_token",
+        "passed": true
+      },
+      {
+        "case": "jcs_key_order_stable",
+        "passed": true
+      },
+      {
+        "case": "jcs_number_canonicalization",
+        "passed": true
+      },
+      {
+        "case": "wrong_audience",
+        "passed": true
+      },
+      {
+        "case": "wrong_actor",
+        "passed": true
+      },
+      {
+        "case": "unknown_skill_rejected",
+        "passed": true
+      },
+      {
+        "case": "bob_legitimate_task_is_distinct",
+        "passed": true
+      }
+    ]
+  }
+}
